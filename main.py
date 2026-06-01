@@ -1,26 +1,28 @@
-import pygame
 import sys
-import random
+
+import pygame
+
 from settings import SETTINGS
 from classes.player import Player
-from classes.platform import Platform
-from classes.camera import Camera
 from classes.ui import StartScreen
 from classes.enemy import Enemy
+
 
 pygame.init()
 
 screen = pygame.display.set_mode((SETTINGS["WIDTH"], SETTINGS["HEIGHT"]))
 pygame.display.set_caption(SETTINGS["TITLE"])
-clock  = pygame.time.Clock()
+clock = pygame.time.Clock()
 
 # Game states
-state        = "start"
+state = "start"
 start_screen = StartScreen(screen)
 
-# Game objects (init sau khi bắt đầu game)
+# Game objects
 background = pygame.image.load(SETTINGS["BG_IMAGE"]).convert()
 background = pygame.transform.scale(background, (SETTINGS["WIDTH"], SETTINGS["HEIGHT"]))
+player = Player(100, 400)
+enemy = Enemy(500, 400)
 
 running = True
 while running:
@@ -32,15 +34,22 @@ while running:
             if action == "game":
                 state = "game"
 
-    # ── START SCREEN ──
     if state == "start":
         start_screen.update()
         start_screen.draw()
-
-    # ── GAME ──
     elif state == "game":
+        keys = pygame.key.get_pressed()
+        player.move(keys)
+        player.update()
+        enemy.update(player)
+
         screen.blit(background, (0, 0))
-        # TODO: update & draw player, enemies, platforms
+        player.draw(screen)
+        enemy.draw(screen)
+
+        if not player.alive:
+            print("Game Over!")
+            running = False
 
     pygame.display.update()
     clock.tick(SETTINGS["FPS"])

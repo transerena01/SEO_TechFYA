@@ -7,7 +7,6 @@ class Enemy:
         self.speed = speed
         self.direction = 1
         self.patrol_distance = patrol_distance
-        self.color = (255, 60, 60)
 
         self.damage = 1
         self.last_hit_time = 0

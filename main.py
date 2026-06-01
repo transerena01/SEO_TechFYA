@@ -1,9 +1,11 @@
-import sys
-
 import pygame
+import sys
+import random
 
 from settings import SETTINGS
 from classes.player import Player
+from classes.platform import Platform
+from classes.camera import Camera
 from classes.ui import StartScreen
 from classes.enemy import Enemy
 
@@ -34,9 +36,12 @@ while running:
             if action == "game":
                 state = "game"
 
+    # START SCREEN
     if state == "start":
         start_screen.update()
         start_screen.draw()
+
+    # GAME
     elif state == "game":
         keys = pygame.key.get_pressed()
         player.move(keys)

@@ -9,5 +9,6 @@ SETTINGS = {
     "GRAVITY":      0.8,
     "SKY_COLOR":    (134, 194, 237),
     "BG_IMAGE":     "asset/background/BG Image.png",
-    "FONT_PATH":    "font/Minecraft.ttf"
+    "FONT_PATH":    "font/Minecraft.ttf",
+    "MAP_FILE":     "main_game.tmx"
 }

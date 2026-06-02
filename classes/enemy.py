@@ -20,6 +20,7 @@ class Enemy:
         self.animations = {
             "idle": self.load_animation("01-Idle"),
             "run": self.load_animation("02-Run"),
+            
         }
 
         self.state = "run"
@@ -64,7 +65,7 @@ class Enemy:
 
         self.image = frames[int(self.frame_index)]
 
-        if self.direction == -1:
+        if self.direction == 1:
             self.image = pygame.transform.flip(self.image, True, False)
 
     def attack_player(self, player):
@@ -87,5 +88,6 @@ class Enemy:
         self.animate()
         self.attack_player(player)
 
-    def draw(self, screen):
-        screen.blit(self.image, self.rect)
+    def draw(self, screen, offset=(0, 0)):
+        draw_rect = self.rect.move(offset)
+        screen.blit(self.image, draw_rect)

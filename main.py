@@ -23,6 +23,7 @@ start_screen = StartScreen(screen)
 background = pygame.image.load(SETTINGS["BG_IMAGE"]).convert()
 background = pygame.transform.scale(background, (SETTINGS["WIDTH"], SETTINGS["HEIGHT"]))
 game_map = GameMap(SETTINGS["MAP_FILE"])
+
 camera = Camera(
     SETTINGS["WIDTH"],
     SETTINGS["HEIGHT"],
@@ -44,7 +45,7 @@ else:
 player.rect.left = max(0, player.rect.left)
 player.rect.top = max(0, player.rect.top)
 player.check_ground_support(terrain_rects)
-camera.snap_to(player.rect)
+camera.update(player.rect)
 
 enemy = Enemy(500, 400)
 
@@ -72,14 +73,14 @@ while running:
         player.update()
         enemy.update(player)
         camera.update(player.rect)
-
-        world_offset = game_map.get_draw_offset(camera)
+ 
+        offset = camera.get_offset()
         screen.fill(SETTINGS["SKY_COLOR"]) 
         game_map.draw_background(screen, camera)
-        player.draw(screen, world_offset)
-        enemy.draw(screen, world_offset)
+        player.draw(screen, offset)
+        enemy.draw(screen, offset)
         game_map.draw_foreground(screen, camera)
-
+ 
         if not player.alive:
             print("Game Over!")
             running = False

@@ -4,7 +4,7 @@ import pygame
 
 
 class Player:
-    def __init__(self, x, y, width=40, height=60):
+    def __init__(self, x, y, width=100, height=90):
         self.rect = pygame.Rect(x, y, width, height)
 
         self.speed = 5
@@ -27,12 +27,27 @@ class Player:
         }
         self.state = "ground"
         self.frame_index = 0
-        self.animation_speed = 0.2
+        self.animation_speed = 0.06
         self.image = self.animations[self.state][0]
 
     def load_animation(self, folder_name):
         frames = []
-        folder_path = os.path.join("asset", "character", "Pink Star", folder_name)
+        candidate_roots = [
+            os.path.join("asset", "graphics", "character", "Pink Star"),
+            os.path.join("asset", "character", "Pink Star"),
+        ]
+        folder_path = next(
+            (
+                os.path.join(root, folder_name)
+                for root in candidate_roots
+                if os.path.isdir(os.path.join(root, folder_name))
+            ),
+            None,
+        )
+        if folder_path is None:
+            raise FileNotFoundError(
+                f"Could not find animation folder '{folder_name}' in: {candidate_roots}"
+            )
 
         for file_name in sorted(os.listdir(folder_path)):
             if not file_name.endswith(".png"):

@@ -25,9 +25,10 @@ class GameMap:
             if not isinstance(layer, pytmx.TiledTileLayer):
                 continue
 
+            layer_name = (layer.name or "").lower()
             target = (
                 self.foreground_surface
-                if "foreground" in layer.name.lower()
+                if layer_name in {"fg", "foreground"}
                 else self.background_surface
             )
 
@@ -40,7 +41,8 @@ class GameMap:
         for layer in self.tmx_data.visible_layers:
             if not isinstance(layer, pytmx.TiledTileLayer):
                 continue
-            if "terrain" not in layer.name.lower():
+            layer_name = (layer.name or "").lower()
+            if layer_name not in {"terrain", "platforms"}:
                 continue
             for x, y, surf in layer.tiles():
                 rects.append(pygame.Rect(

@@ -7,10 +7,6 @@ class Camera:
         self.follow_y = follow_y
         self.x = 0
         self.y = 0
-        self.focus_x = screen_width // 2
-        self.focus_y = screen_height // 2
-        self.deadzone_width = 0
-        self.deadzone_height = 0
 
     def get_x_bounds(self):
         return 0, max(0, self.world_width - self.screen_width)
@@ -25,14 +21,11 @@ class Camera:
         else:
             self.y = 0
 
-    def snap_to(self, target_rect):
-        self.x = target_rect.centerx - self.focus_x
+    def update(self, target_rect):
+        self.x = target_rect.centerx - self.screen_width / 2
         if self.follow_y:
-            self.y = target_rect.centery - self.focus_y
+            self.y = target_rect.centery - self.screen_height / 2
         self.clamp()
 
-    def update(self, target_rect):
-        self.x = target_rect.centerx - self.focus_x
-        if self.follow_y:
-            self.y = target_rect.centery - self.focus_y
-        self.clamp()
+    def get_offset(self):
+        return (-self.x, -self.y)

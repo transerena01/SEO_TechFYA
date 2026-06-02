@@ -30,13 +30,22 @@ class Enemy:
 
     def load_animation(self, folder_name):
         frames = []
-
-        folder_path = os.path.join(
-            "asset",
-            "enemy",
-            "Fierce Tooth",
-            folder_name
+        candidate_roots = [
+            os.path.join("asset", "graphics", "enemy", "Fierce Tooth"),
+            os.path.join("asset", "enemy", "Fierce Tooth"),
+        ]
+        folder_path = next(
+            (
+                os.path.join(root, folder_name)
+                for root in candidate_roots
+                if os.path.isdir(os.path.join(root, folder_name))
+            ),
+            None,
         )
+        if folder_path is None:
+            raise FileNotFoundError(
+                f"Could not find enemy animation folder '{folder_name}' in: {candidate_roots}"
+            )
 
         for file_name in sorted(os.listdir(folder_path)):
             if file_name.endswith(".png"):

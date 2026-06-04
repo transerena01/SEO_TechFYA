@@ -1,6 +1,48 @@
-from pathlib import Path
 import pygame
 from settings import SETTINGS
+from classes.loader import (
+    load_background,
+    load_font,
+    load_frames,
+    load_frames_from_candidates,
+    load_glyph_map,
+    load_scaled_parts,
+)
+
+
+class GameHUD:
+    def __init__(self, position, heart_count=5, scale=2):
+        self.position = pygame.Vector2(position)
+        self.heart_count = heart_count
+        self.scale = scale
+        self.frames = self.load_heart_frames()
+        self.frame_index = 0.0
+        self.animation_speed = 5
+        self.spacing = self.frames[0].get_width() + 8
+        self.empty_alpha = 70
+
+    def load_heart_frames(self):
+        return load_frames(
+            "asset/graphics/ui/heart",
+            scale=self.scale,
+            sort_key=lambda path: int(path.stem),
+        )
+
+    def update(self, dt):
+        self.frame_index = (self.frame_index + (self.animation_speed * dt)) % len(self.frames)
+
+    def draw(self, screen, health, max_health=None):
+        max_hearts = self.heart_count if max_health is None else max_health
+        visible_hearts = max(0, min(int(health), int(max_hearts)))
+        frame = self.frames[int(self.frame_index)]
+        empty_frame = frame.copy()
+        empty_frame.set_alpha(self.empty_alpha)
+
+        for heart_index in range(int(max_hearts)):
+            draw_x = round(self.position.x + heart_index * self.spacing)
+            draw_y = round(self.position.y)
+            heart_surface = frame if heart_index < visible_hearts else empty_frame
+            screen.blit(heart_surface, (draw_x, draw_y))
 
 
 class StartScreen:
@@ -8,17 +50,15 @@ class StartScreen:
         self.screen = screen
         self.width  = SETTINGS["WIDTH"]
         self.height = SETTINGS["HEIGHT"]
-        self.font_path = Path(SETTINGS["FONT_PATH"])
 
         # Load background
-        self.bg = pygame.image.load("asset/screen_start.png").convert()
-        self.bg = pygame.transform.scale(self.bg, (self.width, self.height))
+        self.bg = load_background("asset/screen_start.png", (self.width, self.height))
 
         # Fonts
-        self.font_title  = self.load_font(110)
-        self.font_sub    = self.load_font(50)
-        self.font_button = self.load_font(48)
-        self.font_panel  = self.load_font(26)
+        self.font_title  = load_font(SETTINGS["FONT_PATH"], 110)
+        self.font_sub    = load_font(SETTINGS["FONT_PATH"], 50)
+        self.font_button = load_font(SETTINGS["FONT_PATH"], 48)
+        self.font_panel  = load_font(SETTINGS["FONT_PATH"], 26)
         self.title_text = "HA LONG RUN"
         self.subtitle_text = "A Vietnam Adventure"
         self.title_rect = pygame.Rect(0, 0, 0, 0)
@@ -61,9 +101,14 @@ class StartScreen:
 
         # Pink Star idle animation
         self.star_scale = 10
-        self.star_frames = self.load_animation_frames(
-            "asset/character/Pink Star/01-Idle",
-            self.star_scale,
+        self.star_frames = load_frames_from_candidates(
+            [
+                "asset/graphics/character/Pink Star",
+                "asset/character/Pink Star",
+            ],
+            "01-Idle",
+            pattern="Idle *.png",
+            scale=self.star_scale,
             flip_x=True,
         )
         self.star_frame_index = 0.0
@@ -73,9 +118,14 @@ class StartScreen:
 
         # Fierce Tooth idle animation
         self.fierce_tooth_scale = 10
-        self.fierce_tooth_frames = self.load_animation_frames(
-            "asset/enemy/Fierce Tooth/01-Idle",
-            self.fierce_tooth_scale,
+        self.fierce_tooth_frames = load_frames_from_candidates(
+            [
+                "asset/graphics/enemy/Fierce Tooth",
+                "asset/enemy/Fierce Tooth",
+            ],
+            "01-Idle",
+            pattern="Idle *.png",
+            scale=self.fierce_tooth_scale,
         )
         self.fierce_tooth_frame_index = 0.0
         self.fierce_tooth_animation_speed = 0.18
@@ -97,77 +147,42 @@ class StartScreen:
             "Click Instruction to open this guide again.",
         ]
 
-    def load_font(self, size):
-        if self.font_path.exists():
-            return pygame.font.Font(self.font_path.as_posix(), size)
-        return pygame.font.Font(None, size)
-
-    def load_animation_frames(self, folder_path, scale, flip_x=False):
-        idle_dir = Path(folder_path)
-        frame_paths = sorted(idle_dir.glob("Idle *.png"))
-        frames = []
-
-        for frame_path in frame_paths:
-            frame = pygame.image.load(frame_path.as_posix()).convert_alpha()
-            frame = pygame.transform.scale_by(frame, scale)
-            if flip_x:
-                frame = pygame.transform.flip(frame, True, False)
-            frames.append(frame)
-
-        return frames
-
     def load_big_text_glyphs(self):
-        glyph_dir = Path("font/Big Text")
-        glyphs = {}
-
-        for index, letter in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ", start=1):
-            glyph_path = glyph_dir / f"{index}.png"
-            if glyph_path.exists():
-                glyph = pygame.image.load(glyph_path.as_posix()).convert_alpha()
-                glyphs[letter] = pygame.transform.scale_by(glyph, self.big_text_scale)
-
-        return glyphs
+        return load_glyph_map(
+            "font/Big Text",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            scale=self.big_text_scale,
+        )
 
     def load_small_text_glyphs(self, scale=None):
-        glyph_dir = Path("font/Small Text")
-        glyphs = {}
         glyph_scale = self.small_text_scale if scale is None else scale
-
-        for index, letter in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ", start=1):
-            glyph_path = glyph_dir / f"{index}.png"
-            if glyph_path.exists():
-                glyph = pygame.image.load(glyph_path.as_posix()).convert_alpha()
-                glyphs[letter] = pygame.transform.scale_by(glyph, glyph_scale)
-
-        return glyphs
+        return load_glyph_map(
+            "font/Small Text",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            scale=glyph_scale,
+        )
 
     def load_yellow_board_parts(self):
         return self.load_box_parts(
-            "asset/Yellow Board",
+            "asset/graphics/ui/Yellow Board",
             self.menu_board_scale,
             self.menu_board_scale,
         )
 
     def load_yellow_paper_parts(self):
         return self.load_box_parts(
-            "asset/Yellow Paper",
+            "asset/graphics/ui/Yellow Paper",
             self.paper_box_scale_x,
             self.paper_box_scale_y,
         )
 
     def load_box_parts(self, folder_path, scale_x, scale_y):
-        tile_dir = Path(folder_path)
-        parts = {}
-
-        for index in (10, 11, 12):
-            tile_path = tile_dir / f"{index}.png"
-            if tile_path.exists():
-                part = pygame.image.load(tile_path.as_posix()).convert_alpha()
-                scaled_width = max(1, round(part.get_width() * scale_x))
-                scaled_height = max(1, round(part.get_height() * scale_y))
-                parts[index] = pygame.transform.scale(part, (scaled_width, scaled_height))
-
-        return parts
+        return load_scaled_parts(
+            folder_path,
+            (10, 11, 12),
+            scale_x=scale_x,
+            scale_y=scale_y,
+        )
 
     def create_outline_surface(self, surface, color):
         mask = pygame.mask.from_surface(surface)

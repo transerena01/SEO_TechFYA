@@ -1,22 +1,23 @@
-import os
-
 import pygame
+
+from classes.loader import load_frames_from_candidates
 
 
 class Player:
-    def __init__(self, x, y, width=100, height=90):
+    def __init__(self, x, y, width=90, height=90):
         self.rect = pygame.Rect(x, y, width, height)
 
         self.speed = 5
         self.velocity_y = 0
         self.gravity = 0.5
-        self.jump_force = -12
+        self.jump_force = -30
         self.on_ground = False
         self.horizontal_input = 0
         self.facing_right = True
         self.previous_y = self.rect.y
 
-        self.points = 3
+        self.max_points = 5
+        self.points = self.max_points
         self.alive = True
 
         self.animations = {
@@ -31,34 +32,15 @@ class Player:
         self.image = self.animations[self.state][0]
 
     def load_animation(self, folder_name):
-        frames = []
         candidate_roots = [
-            os.path.join("asset", "graphics", "character", "Pink Star"),
-            os.path.join("asset", "character", "Pink Star"),
+            "asset/graphics/character/Pink Star",
+            "asset/character/Pink Star",
         ]
-        folder_path = next(
-            (
-                os.path.join(root, folder_name)
-                for root in candidate_roots
-                if os.path.isdir(os.path.join(root, folder_name))
-            ),
-            None,
+        return load_frames_from_candidates(
+            candidate_roots,
+            folder_name,
+            size=(self.rect.width, self.rect.height),
         )
-        if folder_path is None:
-            raise FileNotFoundError(
-                f"Could not find animation folder '{folder_name}' in: {candidate_roots}"
-            )
-
-        for file_name in sorted(os.listdir(folder_path)):
-            if not file_name.endswith(".png"):
-                continue
-
-            image_path = os.path.join(folder_path, file_name)
-            image = pygame.image.load(image_path).convert_alpha()
-            image = pygame.transform.scale(image, (self.rect.width, self.rect.height))
-            frames.append(image)
-
-        return frames
 
     def move(self, keys, terrain_rects):
         was_on_ground = self.on_ground
@@ -139,6 +121,9 @@ class Player:
     def check_status(self):
         if self.points <= 0:
             self.alive = False
+
+    def take_damage(self, amount):
+        self.points = max(0, self.points - amount)
 
     def update(self):
         self.check_status()

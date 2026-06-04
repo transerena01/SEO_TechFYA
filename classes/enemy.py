@@ -1,8 +1,8 @@
 import pygame
-import os
 
+from classes.loader import load_frames, load_frames_from_candidates, load_image
 
-class Enemy:
+class Tooth:
     def __init__(self, x, y, width=120, height=120, speed=2, patrol_distance=120):
         self.rect = pygame.Rect(x, y, width, height)
         self.start_x = x
@@ -20,7 +20,6 @@ class Enemy:
         self.animations = {
             "idle": self.load_animation("01-Idle"),
             "run": self.load_animation("02-Run"),
-            
         }
 
         self.state = "run"
@@ -29,32 +28,15 @@ class Enemy:
         self.image = self.animations[self.state][0]
 
     def load_animation(self, folder_name):
-        frames = []
         candidate_roots = [
-            os.path.join("asset", "graphics", "enemy", "Fierce Tooth"),
-            os.path.join("asset", "enemy", "Fierce Tooth"),
+            "asset/graphics/enemy/Fierce Tooth",
+            "asset/enemy/Fierce Tooth",
         ]
-        folder_path = next(
-            (
-                os.path.join(root, folder_name)
-                for root in candidate_roots
-                if os.path.isdir(os.path.join(root, folder_name))
-            ),
-            None,
+        return load_frames_from_candidates(
+            candidate_roots,
+            folder_name,
+            size=(self.width, self.height),
         )
-        if folder_path is None:
-            raise FileNotFoundError(
-                f"Could not find enemy animation folder '{folder_name}' in: {candidate_roots}"
-            )
-
-        for file_name in sorted(os.listdir(folder_path)):
-            if file_name.endswith(".png"):
-                image_path = os.path.join(folder_path, file_name)
-                image = pygame.image.load(image_path).convert_alpha()
-                image = pygame.transform.scale(image, (self.width, self.height))
-                frames.append(image)
-
-        return frames
 
     def move(self):
         self.rect.x += self.speed * self.direction
@@ -82,9 +64,8 @@ class Enemy:
 
         if self.rect.colliderect(player.rect):
             if current_time - self.last_hit_time >= self.hit_cooldown:
-                player.points -= self.damage
+                player.take_damage(self.damage)
                 self.last_hit_time = current_time
-                print("Player got hit! Points:", player.points)
 
     def update(self, player):
         self.move()
@@ -100,3 +81,144 @@ class Enemy:
     def draw(self, screen, offset=(0, 0)):
         draw_rect = self.rect.move(offset)
         screen.blit(self.image, draw_rect)
+
+
+class Pearl:
+    _base_image = None
+
+    def __init__(self, position, direction, size=(16, 16), speed=280, damage=1):
+        if Pearl._base_image is None:
+            Pearl._base_image = load_image("asset/graphics/enemies/bullets/pearl.png")
+
+        self.image = pygame.transform.scale(Pearl._base_image, size)
+        self.rect = self.image.get_rect(center=position)
+        self.position = pygame.Vector2(self.rect.topleft)
+        self.velocity = pygame.Vector2(direction * speed, 0)
+        self.damage = damage
+        self.active = True
+
+    def update(self, dt, player, terrain_rects, world_rect):
+        if not self.active:
+            return
+
+        self.position += self.velocity * dt
+        self.rect.topleft = (round(self.position.x), round(self.position.y))
+
+        if player is not None and self.rect.colliderect(player.rect):
+            player.take_damage(self.damage)
+            self.active = False
+            return
+
+        if not world_rect.colliderect(self.rect):
+            self.active = False
+            return
+
+        for terrain_rect in terrain_rects:
+            if self.rect.colliderect(terrain_rect):
+                self.active = False
+                return
+
+    def draw(self, screen, offset=(0, 0)):
+        screen.blit(self.image, self.rect.move(offset))
+
+
+class Shell:
+    def __init__(self, position, size, *, reverse=False, fire_cooldown_ms=1800):
+        self.direction = 1 if reverse else -1
+        self.projectile_size = (16, 16)
+        self.idle_frames = self.load_frames("idle", size)
+        self.fire_frames = self.load_frames("fire", size)
+        self.state = "idle"
+        self.frame_index = 0.0
+        self.fire_animation_speed = 12
+        self.fire_cooldown_ms = fire_cooldown_ms
+        self.time_since_fire_ms = fire_cooldown_ms
+        self.fired_this_cycle = False
+
+        self.image = self.idle_frames[0]
+        self.rect = self.image.get_rect(midbottom=position)
+        self.projectiles = []
+
+    def load_frames(self, animation_name, size):
+        frames = load_frames(
+            f"asset/graphics/enemy/shell/{animation_name}",
+            size=size,
+        )
+        if self.direction == -1:
+            frames = [pygame.transform.flip(frame, True, False) for frame in frames]
+        return frames
+
+    def start_fire_cycle(self):
+        self.state = "fire"
+        self.frame_index = 0.0
+        self.fired_this_cycle = False
+
+    def spawn_pearl(self, terrain_rects):
+        spawn_position = (
+            self.rect.centerx + self.direction * max(10, self.rect.width // 2 - 10),
+            self.rect.centery - 2,
+        )
+        pearl = Pearl(
+            spawn_position,
+            self.direction,
+            size=self.projectile_size,
+        )
+
+        # Nudge new pearls clear of the launch platform before normal
+        # terrain collision takes over.
+        max_clearance = max(192, self.rect.width * 4)
+        clearance_steps = 0
+        while clearance_steps < max_clearance and any(
+            pearl.rect.colliderect(terrain_rect)
+            for terrain_rect in terrain_rects
+        ):
+            pearl.position.x += self.direction
+            pearl.rect.x = round(pearl.position.x)
+            clearance_steps += 1
+
+        self.projectiles.append(pearl)
+
+    def update_animation(self, dt, terrain_rects):
+        anchor = self.rect.midbottom
+
+        if self.state == "idle":
+            self.image = self.idle_frames[0]
+            self.rect = self.image.get_rect(midbottom=anchor)
+            return
+
+        self.frame_index += self.fire_animation_speed * dt
+        frame_number = min(int(self.frame_index), len(self.fire_frames) - 1)
+        self.image = self.fire_frames[frame_number]
+        self.rect = self.image.get_rect(midbottom=anchor)
+
+        if not self.fired_this_cycle and frame_number >= 2:
+            self.spawn_pearl(terrain_rects)
+            self.fired_this_cycle = True
+
+        if self.frame_index >= len(self.fire_frames):
+            self.state = "idle"
+            self.frame_index = 0.0
+            self.image = self.idle_frames[0]
+            self.rect = self.image.get_rect(midbottom=anchor)
+
+    def update(self, dt, player, terrain_rects, world_rect):
+        if self.state == "idle":
+            self.time_since_fire_ms += dt * 1000
+            if self.time_since_fire_ms >= self.fire_cooldown_ms:
+                self.time_since_fire_ms = 0
+                self.start_fire_cycle()
+
+        self.update_animation(dt, terrain_rects)
+
+        for projectile in self.projectiles:
+            projectile.update(dt, player, terrain_rects, world_rect)
+
+        self.projectiles = [
+            projectile for projectile in self.projectiles
+            if projectile.active
+        ]
+
+    def draw(self, screen, offset=(0, 0)):
+        screen.blit(self.image, self.rect.move(offset))
+        for projectile in self.projectiles:
+            projectile.draw(screen, offset)

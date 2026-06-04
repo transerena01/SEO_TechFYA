@@ -11,6 +11,19 @@ from classes.tilemap import GameMap
 
 
 pygame.init()
+pygame.mixer.init()
+
+pygame.mixer.music.load("asset/SEOmusic/Pokémon Ruby and Sapphire - Oceanic Museum (Remix).mp3")
+pygame.mixer.music.set_volume(0.4)
+pygame.mixer.music.play(-1)
+coin_sound = pygame.mixer.Sound(
+        "asset/SEOmusic/ES_User Interface, Alert, Success, Reward, Bright, Happy Twinkle, Short - Epidemic Sound.mp3"
+    )
+coin_sound.set_volume(0.6)
+enemy_hit_sound = pygame.mixer.Sound(
+        "asset/SEOmusic/ES_Games, Video, Retro, Enemy Attack 03 - Epidemic Sound.mp3"
+    )
+enemy_hit_sound.set_volume(0.6)
 
 screen = pygame.display.set_mode((SETTINGS["WIDTH"], SETTINGS["HEIGHT"]))
 pygame.display.set_caption(SETTINGS["TITLE"])
@@ -207,36 +220,59 @@ while running:
         start_screen.draw()
 
     # GAME
+
     elif state == "game":
         keys = pygame.key.get_pressed()
         player.move(keys, terrain_rects)  
         player.update()
+
+        # Tooth enemies
         for tooth in teeth:
+            old_points = player.points
             tooth.update(player)
+            if player.points < old_points:
+                enemy_hit_sound.play()
+
         game_hud.update(dt)
+
+        # Shell enemies
         for shell in shells:
+            old_points = player.points
             shell.update(dt, player, terrain_rects, world_rect)
+            if player.points < old_points:
+                enemy_hit_sound.play()
+
         for animated_object in animated_objects:
             animated_object.update(dt)
+
+        # Collectibles
         for collectible in collectibles[:]:
             collectible.update(dt)
             if collectible.rect.colliderect(player.rect):
+                coin_sound.play()
                 collectible.collect(player)
                 collectibles.remove(collectible)
+
         camera.update(player.rect)
  
         offset = camera.get_offset()
         screen.fill(SETTINGS["SKY_COLOR"]) 
         game_map.draw_background(screen, camera)
+
         for animated_object in animated_objects:
             animated_object.draw(screen, offset)
+
         for collectible in collectibles:
             collectible.draw(screen, offset)
+
         for shell in shells:
             shell.draw(screen, offset)
+
         player.draw(screen, offset)
+
         for tooth in teeth:
             tooth.draw(screen, offset)
+
         game_map.draw_foreground(screen, camera)
         game_hud.draw(screen, player.points, player.max_points, player.coin_progress)
  

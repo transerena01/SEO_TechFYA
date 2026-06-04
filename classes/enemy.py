@@ -1,5 +1,5 @@
 import pygame
-
+from classes import player
 from classes.loader import load_frames, load_frames_from_candidates, load_image
 
 class Tooth:

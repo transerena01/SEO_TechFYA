@@ -2,7 +2,7 @@ import pygame
 import sys
 
 from settings import SETTINGS
-from classes.animated_sprite import AnimatedSprite
+from classes.animated_sprite import AnimatedSprite, Collectible
 from classes.enemy import Tooth, Shell
 from classes.player import Player
 from classes.camera import Camera
@@ -15,6 +15,20 @@ pygame.init()
 screen = pygame.display.set_mode((SETTINGS["WIDTH"], SETTINGS["HEIGHT"]))
 pygame.display.set_caption(SETTINGS["TITLE"])
 clock = pygame.time.Clock()
+
+
+def scale_size(size, scale):
+    return (
+        max(1, round(size[0] * scale)),
+        max(1, round(size[1] * scale)),
+    )
+
+
+def scale_size_xy(size, scale_x, scale_y):
+    return (
+        max(1, round(size[0] * scale_x)),
+        max(1, round(size[1] * scale_y)),
+    )
 
 # Game states
 state = "start"
@@ -55,7 +69,11 @@ if hud_anchor:
 else:
     hud_position = (16, 16)
 
-game_hud = GameHUD(hud_position, heart_count=5)
+game_hud = GameHUD(
+    hud_position,
+    heart_count=5,
+    coin_scale=SETTINGS["HUD_COIN_SCALE"],
+)
 
 teeth = []
 tooth_objects = [
@@ -68,6 +86,7 @@ for tooth_object in tooth_objects:
         max(1, round(tooth_object["width"])),
         max(1, round(tooth_object["height"])),
     )
+    tooth_size = scale_size(tooth_size, SETTINGS["TOOTH_SCALE"])
     tooth_spawn = (
         round(tooth_object["x"] + (tooth_object["width"] / 2)),
         round(tooth_object["y"] + tooth_object["height"]),
@@ -83,24 +102,64 @@ if not teeth:
     teeth.append(fallback_tooth)
 
 animated_objects = []
+collectibles = []
 shells = []
 world_rect = pygame.Rect(0, 0, game_map.pixel_width, game_map.pixel_height)
 
-flag_object = game_map.get_object_by_name("flag")
-if flag_object:
-    flag_position = (
-        round(flag_object["x"] + (flag_object["width"] / 2)),
-        round(flag_object["y"] + flag_object["height"]),
+animated_object_folders = {
+    "flag": "asset/graphics/level/flag",
+    "gold": "asset/graphics/items/gold",
+    "silver": "asset/graphics/items/silver",
+    "diamond": "asset/graphics/items/diamond",
+    "potion": "asset/graphics/items/potion",
+    "skull": "asset/graphics/items/skull",
+}
+pickup_object_names = {"gold", "silver", "diamond", "potion", "skull"}
+pickup_coin_values = SETTINGS["COLLECTIBLE_COIN_VALUES"]
+pickup_health_values = SETTINGS["COLLECTIBLE_HEALTH_VALUES"]
+
+for map_object in game_map.get_objects():
+    object_name = (map_object["name"] or "").lower()
+    asset_folder = animated_object_folders.get(object_name)
+    if asset_folder is None:
+        continue
+
+    object_position = (
+        round(map_object["x"] + (map_object["width"] / 2)),
+        round(map_object["y"] + map_object["height"]),
     )
-    flag_size = (
-        max(1, round(flag_object["width"])),
-        max(1, round(flag_object["height"])),
+    object_size = (
+        max(1, round(map_object["width"])),
+        max(1, round(map_object["height"])),
     )
+    if object_name in pickup_object_names:
+        if object_name == "skull":
+            object_size = scale_size_xy(
+                object_size,
+                SETTINGS["SKULL_SCALE_X"],
+                SETTINGS["SKULL_SCALE_Y"],
+            )
+        else:
+            object_size = scale_size(object_size, SETTINGS["ITEM_SCALE"])
+        collectibles.append(
+            Collectible.from_folder(
+                asset_folder,
+                object_position,
+                item_name=object_name,
+                coin_value=pickup_coin_values.get(object_name, 0),
+                health_value=pickup_health_values.get(object_name, 0),
+                size=object_size,
+                anchor="midbottom",
+                animation_speed=8,
+            )
+        )
+        continue
+
     animated_objects.append(
         AnimatedSprite.from_folder(
-            "asset/graphics/level/flag",
-            flag_position,
-            size=flag_size,
+            asset_folder,
+            object_position,
+            size=object_size,
             anchor="midbottom",
             animation_speed=8,
         )
@@ -159,6 +218,11 @@ while running:
             shell.update(dt, player, terrain_rects, world_rect)
         for animated_object in animated_objects:
             animated_object.update(dt)
+        for collectible in collectibles[:]:
+            collectible.update(dt)
+            if collectible.rect.colliderect(player.rect):
+                collectible.collect(player)
+                collectibles.remove(collectible)
         camera.update(player.rect)
  
         offset = camera.get_offset()
@@ -166,13 +230,15 @@ while running:
         game_map.draw_background(screen, camera)
         for animated_object in animated_objects:
             animated_object.draw(screen, offset)
+        for collectible in collectibles:
+            collectible.draw(screen, offset)
         for shell in shells:
             shell.draw(screen, offset)
         player.draw(screen, offset)
         for tooth in teeth:
             tooth.draw(screen, offset)
         game_map.draw_foreground(screen, camera)
-        game_hud.draw(screen, player.points, player.max_points)
+        game_hud.draw(screen, player.points, player.max_points, player.coin_progress)
  
         if not player.alive:
             running = False

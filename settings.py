@@ -10,5 +10,21 @@ SETTINGS = {
     "SKY_COLOR":    (134, 194, 237),
     "BG_IMAGE":     "asset/background/BG Image.png",
     "FONT_PATH":    "font/Minecraft.ttf",
-    "MAP_FILE":     "asset/data/levels/main_game.tmx"
+    "MAP_FILE":     "asset/data/levels/main_game.tmx",
+    "TOOTH_SCALE":  2.0,
+    "ITEM_SCALE":   0.75,
+    "SKULL_SCALE_X": 0.6,
+    "SKULL_SCALE_Y": 0.75,
+    "HUD_COIN_SCALE": 1.45,
+    "COINS_PER_HEALTH": 100,
+    "COIN_ICON_VALUE": 20,
+    "COLLECTIBLE_COIN_VALUES": {
+        "silver": 10,
+        "gold": 20,
+        "diamond": 30,
+        "skull": 50,
+    },
+    "COLLECTIBLE_HEALTH_VALUES": {
+        "potion": 1,
+    },
 }

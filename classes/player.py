@@ -1,6 +1,7 @@
 import pygame
 
 from classes.loader import load_frames_from_candidates
+from settings import SETTINGS
 
 
 class Player:
@@ -18,6 +19,8 @@ class Player:
 
         self.max_points = 5
         self.points = self.max_points
+        self.coins = 0
+        self.coin_progress = 0
         self.alive = True
 
         self.animations = {
@@ -124,6 +127,23 @@ class Player:
 
     def take_damage(self, amount):
         self.points = max(0, self.points - amount)
+
+    def heal(self, amount):
+        self.points = min(self.max_points, self.points + amount)
+
+    def add_coins(self, amount):
+        if amount <= 0:
+            return
+
+        self.coins += amount
+        self.coin_progress += amount
+
+        earned_health, self.coin_progress = divmod(
+            self.coin_progress,
+            SETTINGS["COINS_PER_HEALTH"],
+        )
+        if earned_health:
+            self.heal(earned_health)
 
     def update(self):
         self.check_status()

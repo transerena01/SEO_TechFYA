@@ -81,3 +81,64 @@ class AnimatedSprite(Sprite):
 
     def draw(self, screen, offset=(0, 0)):
         screen.blit(self.image, self.rect.move(offset))
+
+
+class Collectible(AnimatedSprite):
+    def __init__(
+        self,
+        item_name,
+        position,
+        frames,
+        *,
+        coin_value=0,
+        health_value=0,
+        groups=None,
+        animation_speed=8,
+        anchor="topleft",
+        velocity=(0, 0),
+    ):
+        super().__init__(
+            position,
+            frames,
+            groups=groups,
+            animation_speed=animation_speed,
+            anchor=anchor,
+            velocity=velocity,
+        )
+        self.item_name = item_name
+        self.coin_value = coin_value
+        self.health_value = health_value
+
+    @classmethod
+    def from_folder(
+        cls,
+        folder_path,
+        position,
+        *,
+        item_name,
+        coin_value=0,
+        health_value=0,
+        size=None,
+        groups=None,
+        animation_speed=8,
+        anchor="topleft",
+        velocity=(0, 0),
+    ):
+        frames = cls.load_frames(folder_path, size=size)
+        return cls(
+            item_name,
+            position,
+            frames,
+            coin_value=coin_value,
+            health_value=health_value,
+            groups=groups,
+            animation_speed=animation_speed,
+            anchor=anchor,
+            velocity=velocity,
+        )
+
+    def collect(self, player):
+        if self.coin_value:
+            player.add_coins(self.coin_value)
+        if self.health_value:
+            player.heal(self.health_value)

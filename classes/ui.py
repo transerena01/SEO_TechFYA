@@ -4,6 +4,7 @@ from classes.loader import (
     load_background,
     load_font,
     load_frames,
+    load_image,
     load_frames_from_candidates,
     load_glyph_map,
     load_scaled_parts,
@@ -11,14 +12,20 @@ from classes.loader import (
 
 
 class GameHUD:
-    def __init__(self, position, heart_count=5, scale=2):
+    def __init__(self, position, heart_count=5, scale=2, coin_scale=1):
         self.position = pygame.Vector2(position)
         self.heart_count = heart_count
         self.scale = scale
+        self.coin_scale = coin_scale
         self.frames = self.load_heart_frames()
+        self.coin_frames = self.load_coin_frames()
         self.frame_index = 0.0
+        self.coin_frame_index = 0.0
         self.animation_speed = 5
         self.spacing = self.frames[0].get_width() + 8
+        self.coin_spacing = self.coin_frames[0].get_width() + 8
+        self.coin_slots = max(1, SETTINGS["COINS_PER_HEALTH"] // SETTINGS["COIN_ICON_VALUE"])
+        self.coin_row_y = self.frames[0].get_height() + 12
         self.empty_alpha = 70
 
     def load_heart_frames(self):
@@ -28,10 +35,20 @@ class GameHUD:
             sort_key=lambda path: int(path.stem),
         )
 
+    def load_coin_frames(self):
+        return [
+            load_image(
+                "asset/graphics/ui/coin.png",
+                scale=self.coin_scale,
+            )
+        ]
+
     def update(self, dt):
         self.frame_index = (self.frame_index + (self.animation_speed * dt)) % len(self.frames)
+        if len(self.coin_frames) > 1:
+            self.coin_frame_index = (self.coin_frame_index + (self.animation_speed * dt)) % len(self.coin_frames)
 
-    def draw(self, screen, health, max_health=None):
+    def draw(self, screen, health, max_health=None, coin_progress=0):
         max_hearts = self.heart_count if max_health is None else max_health
         visible_hearts = max(0, min(int(health), int(max_hearts)))
         frame = self.frames[int(self.frame_index)]
@@ -43,6 +60,23 @@ class GameHUD:
             draw_y = round(self.position.y)
             heart_surface = frame if heart_index < visible_hearts else empty_frame
             screen.blit(heart_surface, (draw_x, draw_y))
+
+        visible_coins = max(
+            0,
+            min(
+                self.coin_slots,
+                int(coin_progress // SETTINGS["COIN_ICON_VALUE"]),
+            ),
+        )
+        coin_frame = self.coin_frames[int(self.coin_frame_index)]
+        empty_coin_frame = coin_frame.copy()
+        empty_coin_frame.set_alpha(self.empty_alpha)
+        coin_draw_y = round(self.position.y + self.coin_row_y)
+
+        for coin_index in range(self.coin_slots):
+            draw_x = round(self.position.x + coin_index * self.coin_spacing)
+            coin_surface = coin_frame if coin_index < visible_coins else empty_coin_frame
+            screen.blit(coin_surface, (draw_x, coin_draw_y))
 
 
 class StartScreen:

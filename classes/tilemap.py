@@ -118,8 +118,6 @@ class GameMap:
         if not obj:
             return None
 
-        # pytmx exposes tile-object y as the top edge, so convert it back
-        # to a bottom anchor for sprites we place with midbottom.
         return (
             round(obj["x"] + (obj["width"] / 2)),
             round(obj["y"] + obj["height"]),

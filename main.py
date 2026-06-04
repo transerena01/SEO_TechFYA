@@ -47,6 +47,9 @@ def scale_size_xy(size, scale_x, scale_y):
 state = "start"
 start_screen = StartScreen(screen)
 
+start_ticks = None
+time_limit = 120  # seconds
+
 # Game objects
 game_map = GameMap(SETTINGS["MAP_FILE"])
 
@@ -213,6 +216,7 @@ while running:
             action = start_screen.handle_event(event)
             if action == "game":
                 state = "game"
+                start_ticks = pygame.time.get_ticks()  # Start the timer when the game starts
 
     # Start Screen
     if state == "start":
@@ -222,6 +226,12 @@ while running:
     # GAME
 
     elif state == "game":
+        elapsed_time = (pygame.time.get_ticks() - start_ticks) // 1000
+        time_left = max(0, time_limit - elapsed_time)
+
+        if time_left <= 0:
+            running = False
+
         keys = pygame.key.get_pressed()
         player.move(keys, terrain_rects)  
         player.update()
@@ -275,7 +285,9 @@ while running:
 
         game_map.draw_foreground(screen, camera)
         game_hud.draw(screen, player.points, player.max_points, player.coin_progress)
- 
+        font = pygame.font.Font(None, 48)
+        timer_text = font.render(f"Time: {time_left}", True, (255, 255, 255))
+        screen.blit(timer_text, (SETTINGS["WIDTH"] - 180, 20))  
         if not player.alive:
             running = False
 

@@ -68,7 +68,7 @@ class GameMap:
 
     def get_objects(self):
         objects = []
-        for layer in self.tmx_data.visible_layers:
+        for layer in self.tmx_data.layers:
             if not isinstance(layer, pytmx.TiledObjectGroup):
                 continue
             for obj in layer:

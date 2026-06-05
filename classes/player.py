@@ -98,6 +98,26 @@ class Player:
                 self.velocity_y = 0
                 return
 
+    def move_by(self, dx, dy, terrain_rects):
+        move_x = int(round(dx))
+        move_y = int(round(dy))
+
+        if move_x:
+            self.rect.x += move_x
+            self.collide_horizontal(terrain_rects)
+
+        if move_y:
+            self.rect.y += move_y
+            for rect in terrain_rects:
+                if not self.rect.colliderect(rect):
+                    continue
+
+                if move_y > 0:
+                    self.rect.bottom = rect.top
+                    self.on_ground = True
+                else:
+                    self.rect.top = rect.bottom
+
     def update_state(self):
         if not self.on_ground:
             if self.rect.y > self.previous_y:

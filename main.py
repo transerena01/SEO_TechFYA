@@ -12,6 +12,7 @@ from classes.animated_sprite import (
 from classes.enemy import Tooth, Shell
 from classes.loader import load_font, load_image, load_music, load_sound
 from classes.player import Player
+from classes.platform import MovingPlatformSystem
 from classes.camera import Camera
 from classes.ui import GameHUD, StartScreen
 from classes.tilemap import GameMap
@@ -20,11 +21,16 @@ from classes.tilemap import GameMap
 pygame.init()
 pygame.mixer.init()
 
-load_music(
-    "asset/SEOmusic/Pokémon Ruby and Sapphire - Oceanic Museum (Remix).mp3",
-    volume=0.4,
-    loops=-1,
-)
+START_SCREEN_MUSIC_PATH = "asset/SEOmusic/Intro_hello_Vietnam.mp3"
+MAIN_GAME_MUSIC_PATH = "asset/SEOmusic/Pokémon Ruby and Sapphire - Oceanic Museum (Remix).mp3"
+
+
+def play_background_music(path, volume):
+    load_music(path, volume=volume, loops=-1)
+
+
+play_background_music(START_SCREEN_MUSIC_PATH, volume=0.6)
+
 coin_sound = load_sound(
     "asset/SEOmusic/ES_User Interface, Alert, Success, Reward, Bright, Happy Twinkle, Short - Epidemic Sound.mp3",
     volume=0.6,
@@ -122,6 +128,21 @@ for map_object in map_objects:
         max(1, round(map_object["height"])),
     )
 
+    if object_name in {"palm_large", "palm_small"}:
+        collision_scale = (
+            SETTINGS["PALM_LARGE_COLLISION_SCALE"]
+            if object_name == "palm_large"
+            else SETTINGS["PALM_SMALL_COLLISION_SCALE"]
+        )
+        scaled_rect = pygame.Rect(
+            0,
+            0,
+            max(1, round(object_rect.width * collision_scale)),
+            max(1, round(object_rect.height * collision_scale)),
+        )
+        scaled_rect.midbottom = object_rect.midbottom
+        object_rect = scaled_rect
+
     if object_layer == "objects" and object_name in solid_object_names:
         solid_object_rects.append(object_rect)
 
@@ -187,11 +208,10 @@ animated_objects = []
 collectibles = []
 shells = []
 moving_objects = []
-moving_solid_objects = []
-moving_platform_objects = []
 moving_hazard_objects = []
 water_areas = []
 world_rect = pygame.Rect(0, 0, game_map.pixel_width, game_map.pixel_height)
+moving_platform_system = MovingPlatformSystem(terrain_rects)
 
 animated_object_folders = {
     "flag": "asset/graphics/level/flag",
@@ -361,7 +381,7 @@ moving_object_definitions = {
     },
 }
 moving_solid_object_names = {"boat", "saw", "helicopter"}
-moving_hazard_object_names = {"saw"}
+moving_hazard_object_names = {"saw", "spike"}
 moving_spike_image_path = "asset/graphics/enemies/spike_ball/Spiked Ball.png"
 
 for map_object in map_objects:
@@ -387,17 +407,17 @@ for map_object in map_objects:
             pygame.Vector2(spike_center)
             - OrbitalSprite.angle_offset(radius, start_angle)
         )
-        moving_objects.append(
-            OrbitalSprite(
-                orbit_center,
-                radius,
-                start_angle,
-                [load_image(moving_spike_image_path, size=object_size)],
-                speed=object_properties.get("speed", 0),
-                end_angle=object_properties.get("end_angle", -1),
-                anchor="center",
-            )
+        moving_spike = OrbitalSprite(
+            orbit_center,
+            radius,
+            start_angle,
+            [load_image(moving_spike_image_path, size=object_size)],
+            speed=object_properties.get("speed", 0),
+            end_angle=object_properties.get("end_angle", -1),
+            anchor="center",
         )
+        moving_objects.append(moving_spike)
+        moving_hazard_objects.append(moving_spike)
         continue
 
     moving_object_definition = moving_object_definitions.get(object_name)
@@ -432,85 +452,20 @@ for map_object in map_objects:
         anchor="center",
     )
     moving_objects.append(moving_sprite)
-    if object_name in moving_solid_object_names:
-        moving_solid_objects.append(moving_sprite)
-    if object_properties.get("platform", False):
-        moving_platform_objects.append(moving_sprite)
+    moving_platform_system.register(
+        moving_sprite,
+        solid=object_name in moving_solid_object_names,
+        platform=object_properties.get("platform", False),
+    )
     if object_name in moving_hazard_object_names:
         moving_hazard_objects.append(moving_sprite)
-
-
-def get_player_collision_rects(exclude_moving_object=None):
-    moving_rects = [
-        moving_object.rect
-        for moving_object in moving_solid_objects
-        if moving_object is not exclude_moving_object
-    ]
-    return terrain_rects + moving_rects
-
-
-def get_supporting_platform():
-    support_rect = player.rect.move(0, 1)
-    for moving_platform in moving_platform_objects:
-        if support_rect.colliderect(moving_platform.rect) and player.rect.bottom <= moving_platform.rect.centery:
-            return moving_platform
-    return None
-
-
-def resolve_player_moving_solid_overlap(previous_rects, carried_platform=None):
-    for moving_object in moving_solid_objects:
-        if moving_object is carried_platform:
-            continue
-
-        if not player.rect.colliderect(moving_object.rect):
-            continue
-
-        previous_rect = previous_rects.get(moving_object, moving_object.rect)
-        delta_x = moving_object.rect.x - previous_rect.x
-        delta_y = moving_object.rect.y - previous_rect.y
-
-        if abs(delta_x) >= abs(delta_y) and delta_x != 0:
-            if delta_x > 0:
-                player.rect.left = moving_object.rect.right
-            else:
-                player.rect.right = moving_object.rect.left
-            continue
-
-        if delta_y != 0:
-            if delta_y > 0:
-                player.rect.top = moving_object.rect.bottom
-            else:
-                player.rect.bottom = moving_object.rect.top
-                player.on_ground = True
-            continue
-
-        overlap_left = abs(player.rect.right - moving_object.rect.left)
-        overlap_right = abs(moving_object.rect.right - player.rect.left)
-        overlap_top = abs(player.rect.bottom - moving_object.rect.top)
-        overlap_bottom = abs(moving_object.rect.bottom - player.rect.top)
-        minimum_overlap = min(
-            overlap_left,
-            overlap_right,
-            overlap_top,
-            overlap_bottom,
-        )
-
-        if minimum_overlap == overlap_top:
-            player.rect.bottom = moving_object.rect.top
-            player.on_ground = True
-        elif minimum_overlap == overlap_bottom:
-            player.rect.top = moving_object.rect.bottom
-        elif minimum_overlap == overlap_left:
-            player.rect.right = moving_object.rect.left
-        else:
-            player.rect.left = moving_object.rect.right
 
 
 def player_touches_hazard(player_rect, hazard_rect, padding=4):
     return player_rect.colliderect(hazard_rect.inflate(padding * 2, padding * 2))
 
 
-player.check_ground_support(get_player_collision_rects())
+player.check_ground_support(moving_platform_system.get_collision_rects())
 
 hazard_hit_cooldown_ms = 800
 hazard_last_hit_time = -hazard_hit_cooldown_ms
@@ -549,6 +504,7 @@ while running:
             action = start_screen.handle_event(event)
             if action == "game":
                 state = "game"
+                play_background_music(MAIN_GAME_MUSIC_PATH, volume=0.4)
                 start_ticks = pygame.time.get_ticks()  # Start the timer when the game starts
         elif state == "lose":
             if event.type == pygame.KEYDOWN:
@@ -571,36 +527,26 @@ while running:
         if time_left <= 0:
             state = "lose"
 
-        standing_platform = get_supporting_platform()
-        previous_moving_rects = {
-            moving_object: moving_object.rect.copy()
-            for moving_object in moving_solid_objects
-        }
+        standing_platform = moving_platform_system.get_supporting_platform(player)
+        previous_moving_rects = moving_platform_system.snapshot_rects()
 
         for moving_object in moving_objects:
             moving_object.update(dt)
 
-        carried_platform = None
-        if standing_platform is not None:
-            previous_platform_rect = previous_moving_rects.get(standing_platform)
-            if previous_platform_rect is not None:
-                platform_delta_x = standing_platform.rect.x - previous_platform_rect.x
-                platform_delta_y = standing_platform.rect.y - previous_platform_rect.y
-                if platform_delta_x or platform_delta_y:
-                    carried_platform = standing_platform
-                    player.move_by(
-                        platform_delta_x,
-                        platform_delta_y,
-                        get_player_collision_rects(exclude_moving_object=standing_platform),
-                    )
+        carried_platform = moving_platform_system.carry_player(
+            player,
+            standing_platform,
+            previous_moving_rects,
+        )
 
-        resolve_player_moving_solid_overlap(
+        moving_platform_system.resolve_player_overlap(
+            player,
             previous_moving_rects,
             carried_platform=carried_platform,
         )
 
         keys = pygame.key.get_pressed()
-        player_collision_rects = get_player_collision_rects()
+        player_collision_rects = moving_platform_system.get_collision_rects()
         player.move(keys, player_collision_rects)
         player.update()
 

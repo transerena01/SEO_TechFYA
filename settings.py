@@ -13,6 +13,8 @@ SETTINGS = {
     "MAP_FILE":     "asset/data/levels/main_game.tmx",
     "TOOTH_SCALE":  2.0,
     "ITEM_SCALE":   0.75,
+    "PALM_SMALL_COLLISION_SCALE": 1,
+    "PALM_LARGE_COLLISION_SCALE": 1,
     "SKULL_SCALE_X": 0.75,
     "SKULL_SCALE_Y": 1,
     "HUD_COIN_SCALE": 1.45,

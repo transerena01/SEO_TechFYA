@@ -39,7 +39,6 @@ pygame.display.set_caption(SETTINGS["TITLE"])
 clock = pygame.time.Clock()
 timer_font = load_font(SETTINGS["FONT_PATH"], 36)
 
-
 def scale_size(size, scale):
     return (
         max(1, round(size[0] * scale)),
@@ -516,6 +515,28 @@ player.check_ground_support(get_player_collision_rects())
 hazard_hit_cooldown_ms = 800
 hazard_last_hit_time = -hazard_hit_cooldown_ms
 hazard_damage = 1
+def reset_game():
+    global player, start_ticks, hazard_last_hit_time, state
+
+    # reset player position
+    player_spawn = game_map.get_object_anchor("Player")
+    if player_spawn:
+        player.rect.midbottom = player_spawn
+    else:
+        player.rect.topleft = (100, 400)
+
+    # reset player stats
+    player.points = player.max_points
+    player.alive = True
+    player.coin_progress = 0
+
+    # reset camera and timer
+    camera.update(player.rect)
+    start_ticks = pygame.time.get_ticks()
+    hazard_last_hit_time = -hazard_hit_cooldown_ms
+
+    state = "game"
+
 
 running = True
 while running:
@@ -529,6 +550,12 @@ while running:
             if action == "game":
                 state = "game"
                 start_ticks = pygame.time.get_ticks()  # Start the timer when the game starts
+        elif state == "lose":
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    reset_game()
+                elif event.key == pygame.K_m:
+                    state = "start"
 
     # Start Screen
     if state == "start":
@@ -542,7 +569,7 @@ while running:
         time_left = max(0, time_limit - elapsed_time)
 
         if time_left <= 0:
-            running = False
+            state = "lose"
 
         standing_platform = get_supporting_platform()
         previous_moving_rects = {
@@ -649,11 +676,23 @@ while running:
 
         game_map.draw_foreground(screen, camera)
         game_hud.draw(screen, player.points, player.max_points, player.coin_progress)
-        timer_text = timer_font.render(f"Time: {time_left}", True, (255, 255, 255))
-        screen.blit(timer_text, (SETTINGS["WIDTH"] - 230, 20))
+        timer_text = timer_font.render(f"TIME: {time_left}", True, (255, 244, 214))
+        screen.blit(timer_text, (SETTINGS["WIDTH"] - timer_text.get_width() - 30, 25))
         if not player.alive:
-            running = False
+            state = "lose"
+    elif state == "lose":
+        screen.fill((23, 39, 66))
 
+        lose_font = load_font(SETTINGS["FONT_PATH"], 72)
+        small_font = load_font(SETTINGS["FONT_PATH"], 36)
+
+        lose_text = lose_font.render("YOU LOST", True, (255, 244, 214))
+        retry_text = small_font.render("Press R to Retry", True, (232, 240, 255))
+        menu_text = small_font.render("Press M for Menu", True, (232, 240, 255))
+
+        screen.blit(lose_text, lose_text.get_rect(center=(SETTINGS["WIDTH"] // 2, 260)))
+        screen.blit(retry_text, retry_text.get_rect(center=(SETTINGS["WIDTH"] // 2, 360)))
+        screen.blit(menu_text, menu_text.get_rect(center=(SETTINGS["WIDTH"] // 2, 420)))
     pygame.display.update()
 
 pygame.quit()

@@ -172,13 +172,14 @@ class StartScreen:
 
         # Instruction panel
         self.show_instructions = False
-        self.panel_rect = pygame.Rect(0, 0, 860, 320)
+        self.panel_rect = pygame.Rect(0, 0, 860, 360)
         self.panel_rect.center = (self.width // 2, self.height // 2 + 30)
         self.close_text_rect = pygame.Rect(0, 0, 0, 0)
         self.instruction_lines = [
-            "Move the mouse to highlight a menu item.",
-            "Click Start Game to begin the adventure.",
-            "Click Instruction to open this guide again.",
+            "Use arrow keys (LEFT, RIGHT, UP, DOWN) to move.",
+            "Collect all items and reach the finish line to win.",
+            "Complete the mission within 2 minutes.",
+            "Don't lose all your health.",
         ]
 
     def load_big_text_glyphs(self):

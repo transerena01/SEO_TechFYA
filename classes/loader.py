@@ -30,6 +30,20 @@ def load_background(path, size):
     return load_image(path, alpha=False, size=size)
 
 
+def load_music(path, *, volume=1.0, loops=-1):
+    music_path = Path(path)
+    pygame.mixer.music.load(music_path.as_posix())
+    pygame.mixer.music.set_volume(volume)
+    pygame.mixer.music.play(loops)
+
+
+def load_sound(path, *, volume=1.0):
+    sound_path = Path(path)
+    sound = pygame.mixer.Sound(sound_path.as_posix())
+    sound.set_volume(volume)
+    return sound
+
+
 def load_frames(
     folder_path,
     *,

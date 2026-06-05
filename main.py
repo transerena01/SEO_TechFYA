@@ -4,6 +4,7 @@ import sys
 from settings import SETTINGS
 from classes.animated_sprite import AnimatedSprite, Collectible
 from classes.enemy import Tooth, Shell
+from classes.loader import load_image, load_music, load_sound
 from classes.player import Player
 from classes.camera import Camera
 from classes.ui import GameHUD, StartScreen
@@ -13,17 +14,19 @@ from classes.tilemap import GameMap
 pygame.init()
 pygame.mixer.init()
 
-pygame.mixer.music.load("asset/SEOmusic/Pokémon Ruby and Sapphire - Oceanic Museum (Remix).mp3")
-pygame.mixer.music.set_volume(0.4)
-pygame.mixer.music.play(-1)
-coin_sound = pygame.mixer.Sound(
-        "asset/SEOmusic/ES_User Interface, Alert, Success, Reward, Bright, Happy Twinkle, Short - Epidemic Sound.mp3"
-    )
-coin_sound.set_volume(0.6)
-enemy_hit_sound = pygame.mixer.Sound(
-        "asset/SEOmusic/ES_Games, Video, Retro, Enemy Attack 03 - Epidemic Sound.mp3"
-    )
-enemy_hit_sound.set_volume(0.6)
+load_music(
+    "asset/SEOmusic/Pokémon Ruby and Sapphire - Oceanic Museum (Remix).mp3",
+    volume=0.4,
+    loops=-1,
+)
+coin_sound = load_sound(
+    "asset/SEOmusic/ES_User Interface, Alert, Success, Reward, Bright, Happy Twinkle, Short - Epidemic Sound.mp3",
+    volume=0.6,
+)
+enemy_hit_sound = load_sound(
+    "asset/SEOmusic/ES_Games, Video, Retro, Enemy Attack 03 - Epidemic Sound.mp3",
+    volume=0.6,
+)
 
 screen = pygame.display.set_mode((SETTINGS["WIDTH"], SETTINGS["HEIGHT"]))
 pygame.display.set_caption(SETTINGS["TITLE"])
@@ -43,6 +46,7 @@ def scale_size_xy(size, scale_x, scale_y):
         max(1, round(size[1] * scale_y)),
     )
 
+
 # Game states
 state = "start"
 start_screen = StartScreen(screen)
@@ -52,6 +56,7 @@ time_limit = 120  # seconds
 
 # Game objects
 game_map = GameMap(SETTINGS["MAP_FILE"])
+map_objects = game_map.get_objects()
 
 camera = Camera(
     SETTINGS["WIDTH"],
@@ -63,6 +68,29 @@ camera = Camera(
 
 terrain_rects = game_map.get_terrain_rects()
 terrain_rects += game_map.get_boundary_rects()
+
+solid_object_names = {"barrel", "crate"}
+hazard_object_names = {"floor_spike", "saw"}
+solid_object_rects = []
+hazard_rects = []
+
+for map_object in map_objects:
+    object_name = (map_object["name"] or "").lower()
+    object_layer = (map_object["layer"] or "").lower()
+    object_rect = pygame.Rect(
+        round(map_object["x"]),
+        round(map_object["y"]),
+        max(1, round(map_object["width"])),
+        max(1, round(map_object["height"])),
+    )
+
+    if object_layer == "objects" and object_name in solid_object_names:
+        solid_object_rects.append(object_rect)
+
+    if object_layer == "objects" and object_name in hazard_object_names:
+        hazard_rects.append(object_rect)
+
+terrain_rects += solid_object_rects
 
 player = Player(0, 0)
 player_spawn = game_map.get_object_anchor("Player")
@@ -93,7 +121,7 @@ game_hud = GameHUD(
 
 teeth = []
 tooth_objects = [
-    obj for obj in game_map.get_objects()
+    obj for obj in map_objects
     if (obj["name"] or "").lower() == "tooth"
 ]
 
@@ -124,20 +152,52 @@ world_rect = pygame.Rect(0, 0, game_map.pixel_width, game_map.pixel_height)
 
 animated_object_folders = {
     "flag": "asset/graphics/level/flag",
+    "saw": "asset/graphics/enemies/saw/animation",
+    "floor_spike": "asset/graphics/enemies/floor_spikes",
+    "palm_bg": "asset/graphics/level/palms/palm_bg",
+    "palm_bg_left": "asset/graphics/level/palms/palm_bg_left",
+    "palm_bg_right": "asset/graphics/level/palms/palm_bg_right",
+    "palm_small": "asset/graphics/level/palms/palm_small",
+    "palm_large": "asset/graphics/level/palms/palm_large",
     "gold": "asset/graphics/items/gold",
     "silver": "asset/graphics/items/silver",
     "diamond": "asset/graphics/items/diamond",
     "potion": "asset/graphics/items/potion",
     "skull": "asset/graphics/items/skull",
 }
+static_object_images = {
+    "barrel": "asset/graphics/objects/barrel.png",
+    "crate": "asset/graphics/objects/crate.png",
+}
 pickup_object_names = {"gold", "silver", "diamond", "potion", "skull"}
 pickup_coin_values = SETTINGS["COLLECTIBLE_COIN_VALUES"]
 pickup_health_values = SETTINGS["COLLECTIBLE_HEALTH_VALUES"]
+object_layer_animated_names = {
+    "flag",
+    "saw",
+    "floor_spike",
+    "palm_bg",
+    "palm_bg_left",
+    "palm_bg_right",
+    "palm_small",
+    "palm_large",
+}
 
-for map_object in game_map.get_objects():
+for map_object in map_objects:
     object_name = (map_object["name"] or "").lower()
+    object_layer = (map_object["layer"] or "").lower()
     asset_folder = animated_object_folders.get(object_name)
-    if asset_folder is None:
+    static_image_path = static_object_images.get(object_name)
+    if asset_folder is None and static_image_path is None:
+        continue
+
+    if object_name in pickup_object_names and object_layer != "items":
+        continue
+
+    if (
+        object_name in object_layer_animated_names
+        or object_name in static_object_images
+    ) and object_layer != "objects":
         continue
 
     object_position = (
@@ -171,6 +231,16 @@ for map_object in game_map.get_objects():
         )
         continue
 
+    if static_image_path is not None:
+        animated_objects.append(
+            AnimatedSprite(
+                object_position,
+                [load_image(static_image_path, size=object_size)],
+                anchor="midbottom",
+            )
+        )
+        continue
+
     animated_objects.append(
         AnimatedSprite.from_folder(
             asset_folder,
@@ -182,7 +252,7 @@ for map_object in game_map.get_objects():
     )
 
 shell_objects = [
-    obj for obj in game_map.get_objects()
+    obj for obj in map_objects
     if (obj["name"] or "").lower() == "shell"
 ]
 
@@ -196,7 +266,9 @@ for shell_object in shell_objects:
         max(1, round(shell_object["height"])),
     )
     shell_properties = shell_object.get("properties", {})
-    shell_facing_right = bool(shell_properties.get("reverse", False)) ^ bool(shell_object.get("flip_x", False))
+    shell_facing_right = bool(shell_properties.get("reverse", False)) ^ bool(
+        shell_object.get("flip_x", False)
+    )
     shells.append(
         Shell(
             shell_spawn,
@@ -205,9 +277,13 @@ for shell_object in shell_objects:
         )
     )
 
+hazard_hit_cooldown_ms = 800
+hazard_last_hit_time = -hazard_hit_cooldown_ms
+hazard_damage = 1
+
 running = True
 while running:
-    dt = clock.tick(SETTINGS["FPS"]) / 1000 
+    dt = clock.tick(SETTINGS["FPS"]) / 1000
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -233,7 +309,7 @@ while running:
             running = False
 
         keys = pygame.key.get_pressed()
-        player.move(keys, terrain_rects)  
+        player.move(keys, terrain_rects)
         player.update()
 
         # Tooth enemies
@@ -263,10 +339,16 @@ while running:
                 collectible.collect(player)
                 collectibles.remove(collectible)
 
+        current_time = pygame.time.get_ticks()
+        if current_time - hazard_last_hit_time >= hazard_hit_cooldown_ms:
+            if any(player.rect.colliderect(hazard_rect) for hazard_rect in hazard_rects):
+                enemy_hit_sound.play()
+                player.take_damage(hazard_damage)
+                hazard_last_hit_time = current_time
         camera.update(player.rect)
- 
+
         offset = camera.get_offset()
-        screen.fill(SETTINGS["SKY_COLOR"]) 
+        screen.fill(SETTINGS["SKY_COLOR"])
         game_map.draw_background(screen, camera)
 
         for animated_object in animated_objects:
@@ -287,12 +369,12 @@ while running:
         game_hud.draw(screen, player.points, player.max_points, player.coin_progress)
         font = pygame.font.Font(None, 48)
         timer_text = font.render(f"Time: {time_left}", True, (255, 255, 255))
-        screen.blit(timer_text, (SETTINGS["WIDTH"] - 180, 20))  
+        screen.blit(timer_text, (SETTINGS["WIDTH"] - 180, 20))
         if not player.alive:
             running = False
 
     pygame.display.update()
-    # clock.tick() already called above for dt — don't call again here
+    # clock.tick() already called above for dt - don't call again here
 
 pygame.quit()
 sys.exit()

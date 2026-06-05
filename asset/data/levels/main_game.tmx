@@ -118,11 +118,6 @@
   <object id="27" name="palm_bg" gid="217" x="768" y="448" width="128" height="128"/>
   <object id="43" name="palm_bg_left" gid="228" x="64" y="960" width="104" height="106"/>
   <object id="44" name="palm_bg_right" gid="229" x="640" y="896" width="104" height="106"/>
-  <object id="65" name="saw" x="1536" y="896" width="64" height="64">
-   <properties>
-    <property name="speed" type="int" value="0"/>
-   </properties>
-  </object>
   <object id="69" name="floor_spike" gid="226" x="768" y="384" width="64" height="64">
    <properties>
     <property name="inverted" type="bool" value="false"/>
@@ -177,13 +172,6 @@
     <property name="speed" type="int" value="100"/>
    </properties>
   </object>
-  <object id="75" name="helicopter" x="1364" y="24" width="300" height="10">
-   <properties>
-    <property name="flip" type="bool" value="false"/>
-    <property name="platform" type="bool" value="true"/>
-    <property name="speed" type="int" value="60"/>
-   </properties>
-  </object>
  </objectgroup>
  <objectgroup id="7" name="Items">
   <object id="22" name="diamond" gid="49" x="3520" y="960" width="64" height="64"/>
@@ -199,7 +187,7 @@
   <object id="83" name="silver" gid="52" x="1408" y="256" width="64" height="64"/>
   <object id="84" name="gold" gid="50" x="1344" y="192" width="64" height="64"/>
  </objectgroup>
- <objectgroup id="6" name="Enemies">
+ <objectgroup id="6" name="Enemies" visible="0">
   <object id="36" name="shell" gid="224" x="64" y="448" width="76" height="46">
    <properties>
     <property name="reverse" type="bool" value="true"/>
@@ -214,10 +202,10 @@
   <object id="86" name="tooth" gid="225" x="448" y="320" width="48" height="46"/>
   <object id="87" name="tooth" gid="225" x="1316" y="321.5" width="48" height="46"/>
  </objectgroup>
- <objectgroup id="2" name="Water">
+ <objectgroup id="2" name="Water" visible="0">
   <object id="2" name="water" x="0" y="960" width="3840" height="320"/>
  </objectgroup>
- <objectgroup id="8" name="Data">
+ <objectgroup id="8" name="Data" visible="0">
   <object id="28" name="Data" x="0" y="0" width="64" height="64">
    <properties>
     <property name="bg" value=""/>

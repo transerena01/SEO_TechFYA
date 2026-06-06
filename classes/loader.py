@@ -117,6 +117,42 @@ def load_glyph_map(folder_path, characters, *, scale, start_index=1):
     return glyphs
 
 
+def load_big_text_glyphs(scale):
+    return load_glyph_map(
+        "font/Big Text",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        scale=scale,
+    )
+
+
+def load_small_text_glyphs(scale):
+    return load_glyph_map(
+        "font/Small Text",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        scale=scale,
+    )
+
+
+def load_ui_small_text_glyphs(scale):
+    folder = "asset/graphics/ui/Small Text/Small Text"
+    glyphs = load_glyph_map(
+        folder,
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        scale=scale,
+        start_index=1,
+    )
+    glyphs.update(
+        load_glyph_map(
+            folder,
+            "1234567890",
+            scale=scale,
+            start_index=27,
+        )
+    )
+    glyphs.update(load_glyph_map(folder, ":", scale=scale, start_index=50))
+    return glyphs
+
+
 def load_scaled_parts(folder_path, indices, *, scale_x, scale_y):
     tile_dir = Path(folder_path)
     parts = {}
@@ -132,3 +168,45 @@ def load_scaled_parts(folder_path, indices, *, scale_x, scale_y):
         parts[index] = pygame.transform.scale(part, (scaled_width, scaled_height))
 
     return parts
+
+
+def load_box_parts(folder_path, scale_x, scale_y):
+    return load_scaled_parts(
+        folder_path,
+        (10, 11, 12),
+        scale_x=scale_x,
+        scale_y=scale_y,
+    )
+
+
+def load_yellow_board_parts(scale):
+    return load_box_parts(
+        "asset/graphics/ui/Yellow Board",
+        scale,
+        scale,
+    )
+
+
+def load_yellow_paper_parts(scale_x, scale_y):
+    return load_box_parts(
+        "asset/graphics/ui/Yellow Paper",
+        scale_x,
+        scale_y,
+    )
+
+
+def load_heart_frames(scale):
+    return load_frames(
+        "asset/graphics/ui/heart",
+        scale=scale,
+        sort_key=lambda path: int(path.stem),
+    )
+
+
+def load_coin_frames(scale):
+    return [
+        load_image(
+            "asset/graphics/ui/coin.png",
+            scale=scale,
+        )
+    ]

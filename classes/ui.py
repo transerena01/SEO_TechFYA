@@ -160,14 +160,121 @@ class StartScreen:
         self.instructions_text_rect = pygame.Rect(0, 0, 0, 0)
 
         self.show_instructions = False
-        self.panel_rect = pygame.Rect(0, 0, 860, 360)
-        self.panel_rect.center = (self.width // 2, self.height // 2 + 30)
+        self.instruction_page = 0
+        self.panel_rect = pygame.Rect(0, 0, 860, 400)
+        self.panel_rect.center = (self.width // 2, self.height // 2 + 20)
         self.close_text_rect = pygame.Rect(0, 0, 0, 0)
-        self.instruction_lines = [
-            "Use arrow keys (LEFT, RIGHT, UP, DOWN) to move.",
-            "Collect all items and reach the finish line to win.",
-            "Complete the mission within 2 minutes.",
-            "Don't lose all your health.",
+        self.prev_rect = pygame.Rect(0, 0, 0, 0)
+        self.next_rect = pygame.Rect(0, 0, 0, 0)
+        try:
+            from classes.loader import load_frames
+            _potion_frames = load_frames("asset/graphics/items/potion")
+            _pw = _potion_frames[0].get_width()
+            _ph = _potion_frames[0].get_height()
+            _target = 48
+            _scale = _target / max(_pw, _ph)
+            self.potion_frames = [
+                pygame.transform.scale(f, (max(1, round(_pw * _scale)), max(1, round(_ph * _scale))))
+                for f in _potion_frames
+            ]
+        except Exception:
+            self.potion_frames = []
+        self.potion_frame_index = 0.0
+        self.potion_anim_speed = 0.12
+
+        def _load_scaled(folder, target_h):
+            try:
+                from classes.loader import load_frames
+                frames = load_frames(folder)
+                w0, h0 = frames[0].get_size()
+                scale = target_h / max(h0, 1)
+                return [
+                    pygame.transform.scale(f, (max(1, round(w0 * scale)), max(1, round(h0 * scale))))
+                    for f in frames
+                ]
+            except Exception:
+                return []
+
+        TARGET_H = 48
+        self.tooth_frames   = _load_scaled("asset/graphics/enemy/Fierce Tooth/02-Run", TARGET_H)
+        self.shell_frames   = _load_scaled("asset/graphics/enemy/shell/idle",          TARGET_H)
+        self.saw_frames     = _load_scaled("asset/graphics/enemies/saw/animation",     TARGET_H)
+        self.spike_frames   = _load_scaled("asset/graphics/enemies/floor_spikes",      TARGET_H)
+        self.tooth_fi   = 0.0
+        self.shell_fi   = 0.0
+        self.saw_fi     = 0.0
+        self.spike_fi   = 0.0
+        self.enemy_anim_speed = 0.12
+
+        try:
+            from classes.loader import load_frames, load_image
+            _body = load_image("asset/graphics/level/water/body.png")
+            _top_frames = load_frames("asset/graphics/level/water/top")
+            self.water_body   = _body
+            self.water_top_frames = _top_frames
+        except Exception:
+            self.water_body = None
+            self.water_top_frames = []
+        self.water_top_fi    = 0.0
+        self.water_top_speed = 0.08
+        self.water_alpha     = 110
+
+        self.instruction_pages = [
+            {
+                "title": "Movement",
+                "lines": [
+                    "Use the arrow keys to move your character.",
+                    "LEFT RIGHT    walk left or right",
+                    "UP            jump",
+                    "You can jump over enemies and hazards.",
+                ],
+            },
+            {
+                "title": "Coins & Score",
+                "lines": [
+                    "Collect items scattered across the level.",
+                    "Silver gem  =  10 coins",
+                    "Gold gem    =  20 coins",
+                    "Diamond     =  30 coins",
+                    "Skull       =  50 coins",
+                ],
+            },
+            {
+                "title": "Health & Potions",
+                "lines": [
+                    "You start with 5 hearts of health.",
+                    "Every 100 coins earned = +1 heart (auto).",
+                    "Potion         restores 1 heart instantly.",
+                    "Health cannot exceed the maximum of 5.",
+                ],
+            },
+            {
+                "title": "Enemies & Hazards",
+                "lines": [
+                    "Fierce Tooth    patrols left and right.",
+                    "Shell           fires pearls at you.",
+                    "Saw             deal damage on contact.",
+                ],
+            },
+            {
+                "title": "Water",
+                "lines": [
+                    "Falling into water is instant death.",
+                    "You lose if your body sinks too deep.",
+                    "Stay on platforms above the waterline.",
+                ],
+            },
+            {
+                "title": "Win & Lose",
+                "lines": [
+                    "You have 2 minutes to complete the level.",
+                    "Reach the flag at the end to win.",
+                    "You lose if:",
+                    "   Time runs out",
+                    "   Health reaches zero",
+                    "   You fall into water",
+                ],
+            },
         ]
 
     def create_outline_surface(self, surface, color):
@@ -303,6 +410,22 @@ class StartScreen:
             self.fierce_tooth_frame_index = (
                 self.fierce_tooth_frame_index + self.fierce_tooth_animation_speed
             ) % len(self.fierce_tooth_frames)
+        if self.potion_frames:
+            self.potion_frame_index = (
+                self.potion_frame_index + self.potion_anim_speed
+            ) % len(self.potion_frames)
+        if self.water_top_frames:
+            self.water_top_fi = (
+                self.water_top_fi + self.water_top_speed
+            ) % len(self.water_top_frames)
+        for frames, attr in [
+            (self.tooth_frames, "tooth_fi"),
+            (self.shell_frames, "shell_fi"),
+            (self.saw_frames,   "saw_fi"),
+            (self.spike_frames, "spike_fi"),
+        ]:
+            if frames:
+                setattr(self, attr, (getattr(self, attr) + self.enemy_anim_speed) % len(frames))
 
     def draw(self):
         self.screen.blit(self.bg, (0, 0))
@@ -323,6 +446,11 @@ class StartScreen:
 
         if self.show_instructions:
             self.draw_instruction_panel()
+            prev_center = (self.panel_rect.left + 120, self.panel_rect.bottom - 48)
+            next_center = (self.panel_rect.right - 120, self.panel_rect.bottom - 48)
+            self.prev_rect = self.draw_menu_item("Prev", prev_center, False)
+            next_label = "Close" if self.instruction_page == len(self.instruction_pages) - 1 else "Next"
+            self.next_rect = self.draw_menu_item(next_label, next_center, False)
 
     def draw_pink_star(self):
         frame = self.star_frames[int(self.star_frame_index)]
@@ -461,6 +589,28 @@ class StartScreen:
         self.screen.blit(overlay, (0, 0))
 
         pygame.draw.rect(self.screen, (23, 39, 66), self.panel_rect, border_radius=24)
+
+        WATER_PAGE_INDEX = 4
+        if self.instruction_page == WATER_PAGE_INDEX and self.water_body:
+            tile_w = self.water_body.get_width()
+            tile_h = self.water_body.get_height()
+            pr = self.panel_rect
+            pad = 4
+            half_y = pr.height // 2
+            water_surf = pygame.Surface((pr.width - pad * 2, half_y), pygame.SRCALPHA)
+            ww, wh = water_surf.get_size()
+            body_tile = self.water_body.copy()
+            body_tile.set_alpha(self.water_alpha)
+            for ty in range(0, wh, tile_h):
+                for tx in range(0, ww, tile_w):
+                    water_surf.blit(body_tile, (tx, ty))
+            if self.water_top_frames:
+                top_frame = self.water_top_frames[int(self.water_top_fi)].copy()
+                top_frame.set_alpha(self.water_alpha)
+                for tx in range(0, ww, tile_w):
+                    water_surf.blit(top_frame, (tx, 0))
+            self.screen.blit(water_surf, (pr.left + pad, pr.top + half_y))
+
         pygame.draw.rect(
             self.screen,
             (255, 214, 82),
@@ -469,30 +619,98 @@ class StartScreen:
             border_radius=24,
         )
 
-        title_text = self.font_sub.render("Instruction", True, (255, 244, 214))
-        title_rect = title_text.get_rect(center=(self.panel_rect.centerx, self.panel_rect.top + 55))
+        page = self.instruction_pages[self.instruction_page]
+
+        title_text = self.font_sub.render(page["title"], True, (255, 244, 214))
+        title_rect = title_text.get_rect(center=(self.panel_rect.centerx, self.panel_rect.top + 52))
         self.screen.blit(title_text, title_rect)
 
-        for index, line in enumerate(self.instruction_lines):
+        divider_y = self.panel_rect.top + 80
+        pygame.draw.line(
+            self.screen,
+            (255, 214, 82),
+            (self.panel_rect.left + 40, divider_y),
+            (self.panel_rect.right - 40, divider_y),
+            1,
+        )
+
+        for index, line in enumerate(page["lines"]):
             line_text = self.font_panel.render(line, True, (232, 240, 255))
             line_rect = line_text.get_rect(
-                center=(self.panel_rect.centerx, self.panel_rect.top + 120 + index * 48)
+                center=(self.panel_rect.centerx, self.panel_rect.top + 108 + index * 42)
             )
             self.screen.blit(line_text, line_rect)
 
-        mouse_pos = pygame.mouse.get_pos()
-        close_center = (self.panel_rect.centerx, self.panel_rect.bottom - 50)
-        close_rect = self.font_button.render("Back", True, (255, 255, 255)).get_rect(center=close_center)
-        close_hovered = close_rect.collidepoint(mouse_pos)
-        self.close_text_rect = self.draw_menu_item("Back", close_center, close_hovered)
+        HEALTH_PAGE_INDEX = 2
+        if self.instruction_page == HEALTH_PAGE_INDEX and self.potion_frames:
+            potion_frame = self.potion_frames[int(self.potion_frame_index)]
+            sprite_x = self.panel_rect.centerx + 320
+            sprite_y = self.panel_rect.top + 108 + 2 * 42
+            potion_rect = potion_frame.get_rect(center=(sprite_x, sprite_y))
+            self.screen.blit(potion_frame, potion_rect)
+
+        ENEMIES_PAGE_INDEX = 3
+        if self.instruction_page == ENEMIES_PAGE_INDEX:
+            sprite_x = self.panel_rect.centerx + 320
+            enemy_sprites = [
+                (self.tooth_frames,  self.tooth_fi),
+                (self.shell_frames,  self.shell_fi),
+                (self.saw_frames,    self.saw_fi),
+            ]
+            for row, (frames, fi) in enumerate(enemy_sprites):
+                if not frames:
+                    continue
+                frame = frames[int(fi)]
+                sprite_y = self.panel_rect.top + 108 + row * 42
+                sprite_rect = frame.get_rect(center=(sprite_x, sprite_y))
+                self.screen.blit(frame, sprite_rect)
+
+        total_pages = len(self.instruction_pages)
+        dot_radius = 5
+        dot_spacing = 18
+        dots_total_w = total_pages * dot_spacing - (dot_spacing - dot_radius * 2)
+        dot_start_x = self.panel_rect.centerx - dots_total_w // 2
+        dot_y = self.panel_rect.bottom - 80
+        for i in range(total_pages):
+            dot_x = dot_start_x + i * dot_spacing
+            color = (255, 214, 82) if i == self.instruction_page else (100, 100, 130)
+            pygame.draw.circle(self.screen, color, (dot_x, dot_y), dot_radius)
+
+        arrow_hint = self.font_panel.render(
+            "LEfT RIGHT  to navigate",
+            True,
+            (160, 170, 210),
+        )
+        hint_rect = arrow_hint.get_rect(center=(self.panel_rect.centerx, self.panel_rect.bottom - 20))
+        self.screen.blit(arrow_hint, hint_rect)
 
     def handle_event(self, event):
-        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+        if self.show_instructions:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT:
+                    self.instruction_page = max(0, self.instruction_page - 1)
+                    return None
+                elif event.key == pygame.K_RIGHT:
+                    if self.instruction_page < len(self.instruction_pages) - 1:
+                        self.instruction_page += 1
+                    else:
+                        self.show_instructions = False
+                    return None
+                elif event.key in (pygame.K_ESCAPE,):
+                    self.show_instructions = False
+                    return None
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self.prev_rect.collidepoint(event.pos):
+                    self.instruction_page = max(0, self.instruction_page - 1)
+                elif self.next_rect.collidepoint(event.pos):
+                    if self.instruction_page < len(self.instruction_pages) - 1:
+                        self.instruction_page += 1
+                    else:
+                        self.show_instructions = False
             return None
 
-        if self.show_instructions:
-            if self.close_text_rect.collidepoint(event.pos):
-                self.show_instructions = False
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return None
 
         if self.start_text_rect.collidepoint(event.pos):
@@ -500,6 +718,7 @@ class StartScreen:
 
         if self.instructions_text_rect.collidepoint(event.pos):
             self.show_instructions = True
+            self.instruction_page = 0
 
         return None
 
@@ -803,3 +1022,4 @@ class LoseScreen:
             return "exit"
 
         return None
+    

@@ -14,7 +14,7 @@ from classes.loader import load_font, load_image, load_music, load_sound
 from classes.player import Player
 from classes.platform import MovingPlatformSystem
 from classes.camera import Camera
-from classes.ui import GameHUD, LoseScreen, StartScreen
+from classes.ui import GameHUD, LoseScreen, StartScreen, WinScreen
 from classes.tilemap import GameMap
 
 
@@ -89,7 +89,9 @@ def get_path_endpoints(map_object, sprite_size):
 state = "start"
 start_screen = StartScreen(screen)
 lose_screen = LoseScreen(screen)
+win_screen = WinScreen(screen)
 lose_background = None
+win_background = None
 
 start_ticks = None
 time_limit = 120  # seconds
@@ -97,6 +99,18 @@ time_limit = 120  # seconds
 # Game objects
 game_map = GameMap(SETTINGS["MAP_FILE"])
 map_objects = game_map.get_objects()
+
+# Win condition: player touches the flag
+_flag_obj = game_map.get_object_by_name("flag")
+if _flag_obj:
+    flag_rect = pygame.Rect(
+        round(_flag_obj["x"]),
+        round(_flag_obj["y"]),
+        max(1, round(_flag_obj["width"])),
+        max(1, round(_flag_obj["height"])),
+    )
+else:
+    flag_rect = None
 
 camera = Camera(
     SETTINGS["WIDTH"],
@@ -490,8 +504,15 @@ def enter_lose_state():
     state = "lose"
 
 
+def enter_win_state():
+    global win_background, state, win_time_left
+    win_background = screen.copy()
+    win_time_left = time_left
+    state = "win"
+
+
 def reset_game():
-    global player, start_ticks, hazard_last_hit_time, state, lose_background
+    global player, start_ticks, hazard_last_hit_time, state, lose_background, win_background
 
     # reset player position
     player_spawn = game_map.get_object_anchor("Player")
@@ -514,11 +535,12 @@ def reset_game():
     start_ticks = pygame.time.get_ticks()
     hazard_last_hit_time = -hazard_hit_cooldown_ms
     lose_background = None
-
+    win_background = None
     state = "game"
 
 
 running = True
+win_time_left = 0
 while running:
     dt = clock.tick(SETTINGS["FPS"]) / 1000
 
@@ -547,6 +569,20 @@ while running:
                     reset_game()
                 elif event.key in (pygame.K_m, pygame.K_ESCAPE):
                     running = False
+        elif state == "win":
+            action = win_screen.handle_event(event)
+            if action == "retry":
+                reset_game()
+                play_background_music(MAIN_GAME_MUSIC_PATH, volume=0.4)
+                continue
+            if action == "menu":
+                state = "start"
+                win_background = None
+                play_background_music(START_SCREEN_MUSIC_PATH, volume=0.6)
+                continue
+            if action == "exit":
+                running = False
+                continue
 
     # Start Screen
     if state == "start":
@@ -636,6 +672,11 @@ while running:
                 hazard_last_hit_time = current_time
         camera.update(player.rect)
 
+        # Win condition — player reaches the Vietnam flag
+        if flag_rect and player.rect.colliderect(flag_rect):
+            enter_win_state()
+            continue
+
         offset = camera.get_offset()
         screen.fill(SETTINGS["SKY_COLOR"])
         game_map.draw_background(screen, camera)
@@ -672,6 +713,13 @@ while running:
         else:
             screen.fill((23, 39, 66))
         lose_screen.draw(player.coins)
+    elif state == "win":
+        if win_background is not None:
+            screen.blit(win_background, (0, 0))
+        else:
+            screen.fill((23, 39, 66))
+        win_screen.update(dt)
+        win_screen.draw(player.coins, win_time_left)
     pygame.display.update()
 
 pygame.quit()

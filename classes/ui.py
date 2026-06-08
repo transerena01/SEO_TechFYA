@@ -5,6 +5,7 @@ from classes.loader import (
     load_big_text_glyphs,
     load_coin_frames,
     load_font,
+    load_image,
     load_heart_frames,
     load_frames_from_candidates,
     load_scaled_parts,
@@ -102,6 +103,18 @@ class StartScreen:
         self.subtitle_text_letter_spacing = 4
         self.subtitle_text_word_spacing = 14
         self.subtitle_text_glyphs = load_small_text_glyphs(self.subtitle_text_scale)
+        self.instruction_title_text_scale = 6
+        self.instruction_title_letter_spacing = 4
+        self.instruction_title_word_spacing = 14
+        self.instruction_title_glyphs = load_ui_small_text_glyphs(self.instruction_title_text_scale)
+        self.instruction_body_text_scale = 3
+        self.instruction_body_letter_spacing = 3
+        self.instruction_body_word_spacing = 12
+        self.instruction_body_glyphs = load_ui_small_text_glyphs(self.instruction_body_text_scale)
+        self.instruction_button_text_scale = 4
+        self.instruction_button_letter_spacing = 4
+        self.instruction_button_word_spacing = 14
+        self.instruction_button_glyphs = load_ui_small_text_glyphs(self.instruction_button_text_scale)
         self.menu_board_scale = 2
         self.yellow_board_parts = load_yellow_board_parts(self.menu_board_scale)
         self.paper_box_scale_x = 1.85
@@ -124,6 +137,29 @@ class StartScreen:
         self.start_board_surface = self.build_menu_board(self.start_label)
         self.instructions_board_surface = self.build_menu_board(self.instructions_label)
         self.subtitle_box_surface = self.build_subtitle_box(self.subtitle_text)
+
+        # --- Instruction panel: Green Board nine-slice ---
+        self.instruction_panel_board_scale = 4
+        self.instruction_panel_parts = load_scaled_parts(
+            "asset/graphics/ui/Green Board",
+            tuple(range(1, 10)),
+            scale_x=self.instruction_panel_board_scale,
+            scale_y=self.instruction_panel_board_scale,
+        )
+        self.instruction_paper_scale = 2
+        self.instruction_paper_parts = load_scaled_parts(
+            "asset/graphics/ui/Yellow Paper",
+            tuple(range(1, 10)),
+            scale_x=self.instruction_paper_scale,
+            scale_y=self.instruction_paper_scale,
+        )
+        self.instruction_title_paper_scale = 1.25
+        self.instruction_title_paper_parts = load_scaled_parts(
+            "asset/graphics/ui/Yellow Paper",
+            tuple(range(1, 10)),
+            scale_x=self.instruction_title_paper_scale,
+            scale_y=self.instruction_title_paper_scale,
+        )
 
         self.star_scale = 10
         self.star_frames = load_frames_from_candidates(
@@ -161,8 +197,59 @@ class StartScreen:
 
         self.show_instructions = False
         self.instruction_page = 0
-        self.panel_rect = pygame.Rect(0, 0, 860, 400)
-        self.panel_rect.center = (self.width // 2, self.height // 2 + 20)
+        # Instruction popup layout: edit these values directly to move or resize the pieces.
+        self.instruction_panel_size = (960, 600)
+        self.instruction_panel_center_offset = (0, 0)
+        self.instruction_title_paper_size = (820, 100)
+        self.instruction_title_paper_offset = (0, -60)
+        self.instruction_body_paper_size = (820, 360)
+        self.instruction_body_paper_offset = (0, 20)
+
+        self.panel_rect = pygame.Rect(0, 0, 0, 0)
+        self.instruction_panel_surface = None
+        self.instruction_panel_paper_surface = None
+        self.instruction_panel_title_paper_surface = None
+        self.instruction_panel_board_inner_rect = pygame.Rect(0, 0, 0, 0)
+        self.instruction_panel_title_paper_rect = pygame.Rect(0, 0, 0, 0)
+        self.instruction_panel_title_inner_rect = pygame.Rect(0, 0, 0, 0)
+        self.instruction_panel_paper_rect = pygame.Rect(0, 0, 0, 0)
+        self.instruction_panel_inner_rect = pygame.Rect(0, 0, 0, 0)
+        self.rebuild_instruction_panel_layout()
+        self.instruction_close_button_surface = None
+        self.instruction_close_button_rect = pygame.Rect(0, 0, 0, 0)
+        self.instruction_close_button_size = (55, 55)
+        self.instruction_close_icon_scale = 3.5
+        self.instruction_close_button_offset = (10, 10)
+        self.instruction_nav_button_size = (55, 55)
+        self.instruction_nav_icon_scale = 3.5
+        self.instruction_button_hover_scale = 1.12
+        self.instruction_prev_button_surface = None
+        self.instruction_next_button_surface = None
+        try:
+            close_button = load_image(
+                "asset/graphics/ui/Green Button/1.png",
+                size=self.instruction_close_button_size,
+            )
+            close_icon = load_image(
+                "asset/graphics/ui/Small Text/Small Icons/5.png",
+                scale=self.instruction_close_icon_scale,
+            )
+            self.instruction_close_button_surface = close_button.copy()
+            close_icon_rect = close_icon.get_rect(center=self.instruction_close_button_surface.get_rect().center)
+            self.instruction_close_button_surface.blit(close_icon, close_icon_rect)
+        except Exception as e:
+            print(f"Instruction close button load failed: {e}")
+            self.instruction_close_button_surface = self._build_fallback_close_button_surface()
+        self.instruction_prev_button_surface = self._build_instruction_icon_button_surface(
+            "asset/graphics/ui/Small Text/Small Icons/1.png",
+            self.instruction_nav_button_size,
+            self.instruction_nav_icon_scale,
+        )
+        self.instruction_next_button_surface = self._build_instruction_icon_button_surface(
+            "asset/graphics/ui/Small Text/Small Icons/2.png",
+            self.instruction_nav_button_size,
+            self.instruction_nav_icon_scale,
+        )
         self.close_text_rect = pygame.Rect(0, 0, 0, 0)
         self.prev_rect = pygame.Rect(0, 0, 0, 0)
         self.next_rect = pygame.Rect(0, 0, 0, 0)
@@ -207,7 +294,7 @@ class StartScreen:
         self.enemy_anim_speed = 0.12
 
         try:
-            from classes.loader import load_frames, load_image
+            from classes.loader import load_frames
             _body = load_image("asset/graphics/level/water/body.png")
             _top_frames = load_frames("asset/graphics/level/water/top")
             self.water_body   = _body
@@ -319,6 +406,56 @@ class StartScreen:
             self.subtitle_text_glyphs,
             self.subtitle_text_letter_spacing,
             self.subtitle_text_word_spacing,
+        )
+
+    def normalize_instruction_asset_label(self, label, glyph_map):
+        normalized = label.upper()
+        replacements = {
+            "&": " AND ",
+            "+": " PLUS ",
+            "=": " EQUALS ",
+            ".": " ",
+            ",": " ",
+            "(": " ",
+            ")": " ",
+            "-": " ",
+            "/": " ",
+            "!": " ",
+            "?": " ",
+            "'": "",
+        }
+        for old, new in replacements.items():
+            normalized = normalized.replace(old, new)
+
+        cleaned = "".join(char if char == " " or char in glyph_map else " " for char in normalized)
+        return " ".join(cleaned.split())
+
+    def render_instruction_asset_text(self, label, glyph_map, letter_spacing, word_spacing):
+        normalized = self.normalize_instruction_asset_label(label, glyph_map)
+        return self.render_sprite_text(normalized, glyph_map, letter_spacing, word_spacing)
+
+    def render_instruction_title_text(self, label):
+        return self.render_instruction_asset_text(
+            label,
+            self.instruction_title_glyphs,
+            self.instruction_title_letter_spacing,
+            self.instruction_title_word_spacing,
+        )
+
+    def render_instruction_body_text(self, label):
+        return self.render_instruction_asset_text(
+            label,
+            self.instruction_body_glyphs,
+            self.instruction_body_letter_spacing,
+            self.instruction_body_word_spacing,
+        )
+
+    def render_instruction_button_text(self, label):
+        return self.render_instruction_asset_text(
+            label,
+            self.instruction_button_glyphs,
+            self.instruction_button_letter_spacing,
+            self.instruction_button_word_spacing,
         )
 
     def render_sprite_text(self, label, glyph_map, letter_spacing, word_spacing):
@@ -444,12 +581,42 @@ class StartScreen:
         self.draw_menu_text()
 
         if self.show_instructions:
+            mouse_pos = pygame.mouse.get_pos()
             self.draw_instruction_panel()
-            prev_center = (self.panel_rect.left + 120, self.panel_rect.bottom - 48)
-            next_center = (self.panel_rect.right - 120, self.panel_rect.bottom - 48)
-            self.prev_rect = self.draw_menu_item("Prev", prev_center, False)
-            next_label = "Close" if self.instruction_page == len(self.instruction_pages) - 1 else "Next"
-            self.next_rect = self.draw_menu_item(next_label, next_center, False)
+            bir = self.instruction_panel_board_inner_rect
+            btn_y = self.panel_rect.bottom - 40
+            prev_center = (bir.left - 90,  btn_y)
+            next_center = (bir.right + 90, btn_y)
+            has_prev_page = self.instruction_page > 0
+            has_next_page = self.instruction_page < len(self.instruction_pages) - 1
+            close_hovered = False
+            if self.instruction_close_button_surface is not None:
+                close_hovered = self._get_instruction_close_button_base_rect().collidepoint(mouse_pos)
+            prev_hovered = (
+                has_prev_page
+                and self.instruction_prev_button_surface is not None
+                and self.instruction_prev_button_surface.get_rect(center=prev_center).collidepoint(mouse_pos)
+            )
+            next_hovered = (
+                has_next_page
+                and self.instruction_next_button_surface is not None
+                and self.instruction_next_button_surface.get_rect(center=next_center).collidepoint(mouse_pos)
+            )
+            self.draw_instruction_close_button(hovered=close_hovered)
+            self.prev_rect = pygame.Rect(0, 0, 0, 0)
+            self.next_rect = pygame.Rect(0, 0, 0, 0)
+            if has_prev_page:
+                self.prev_rect = self.draw_instruction_icon_button(
+                    self.instruction_prev_button_surface,
+                    prev_center,
+                    hovered=prev_hovered,
+                )
+            if has_next_page:
+                self.next_rect = self.draw_instruction_icon_button(
+                    self.instruction_next_button_surface,
+                    next_center,
+                    hovered=next_hovered,
+                )
 
     def draw_pink_star(self):
         frame = self.star_frames[int(self.star_frame_index)]
@@ -582,21 +749,237 @@ class StartScreen:
         self.screen.blit(label_text, label_rect)
         return label_rect
 
+    def draw_instruction_panel_button(self, label, center):
+        text_surface = self.render_instruction_button_text(label)
+        if text_surface is None:
+            return self.draw_menu_item(label, center, False)
+
+        outlined_surface = self.create_outlined_surface(
+            text_surface,
+            (128, 128, 128, 255),
+            ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (-2, 2), (2, -2), (2, 2)),
+        )
+        button_rect = outlined_surface.get_rect(center=center)
+        self.screen.blit(outlined_surface, button_rect)
+        return button_rect
+
+    def draw_instruction_icon_button(self, button_surface, center, hovered=False):
+        if button_surface is None:
+            return pygame.Rect(0, 0, 0, 0)
+
+        draw_surface = self._get_instruction_hover_surface(button_surface, hovered)
+        button_rect = draw_surface.get_rect(center=center)
+        self.screen.blit(draw_surface, button_rect)
+        return button_rect
+
+    def _get_instruction_close_button_base_rect(self):
+        if self.instruction_close_button_surface is None:
+            return pygame.Rect(0, 0, 0, 0)
+
+        offset_x, offset_y = self.instruction_close_button_offset
+        return self.instruction_close_button_surface.get_rect(
+            top=self.panel_rect.top + offset_y,
+            right=self.panel_rect.right - offset_x,
+        )
+
+    def draw_instruction_close_button(self, hovered=False):
+        if self.instruction_close_button_surface is None:
+            self.instruction_close_button_rect = pygame.Rect(0, 0, 0, 0)
+            return self.instruction_close_button_rect
+
+        base_rect = self._get_instruction_close_button_base_rect()
+        draw_surface = self._get_instruction_hover_surface(
+            self.instruction_close_button_surface,
+            hovered,
+        )
+        button_rect = draw_surface.get_rect(
+            center=base_rect.center,
+        )
+        self.screen.blit(draw_surface, button_rect)
+        self.instruction_close_button_rect = button_rect
+        return button_rect
+
+    def rebuild_instruction_panel_layout(self):
+        panel_width, panel_height = self.instruction_panel_size
+        offset_x, offset_y = self.instruction_panel_center_offset
+        self.panel_rect = pygame.Rect(0, 0, panel_width, panel_height)
+        self.panel_rect.center = (self.width // 2 + offset_x, self.height // 2 + offset_y)
+
+        self.instruction_panel_surface = None
+        self.instruction_panel_paper_surface = None
+        self.instruction_panel_title_paper_surface = None
+        self.instruction_panel_board_inner_rect = self.panel_rect.inflate(-48, -48)
+
+        if all(idx in self.instruction_panel_parts for idx in range(1, 10)):
+            self.instruction_panel_surface = self._build_instruction_panel_surface(
+                self.instruction_panel_parts,
+                self.panel_rect.size,
+            )
+            self.instruction_panel_board_inner_rect = self._get_panel_inner_rect(
+                self.instruction_panel_parts,
+                self.panel_rect,
+            )
+
+        title_width, title_height = self.instruction_title_paper_size
+        title_offset_x, title_top = self.instruction_title_paper_offset
+        self.instruction_panel_title_paper_rect = pygame.Rect(0, 0, title_width, title_height)
+        self.instruction_panel_title_paper_rect.centerx = self.instruction_panel_board_inner_rect.centerx + title_offset_x
+        self.instruction_panel_title_paper_rect.top = self.instruction_panel_board_inner_rect.top + title_top
+        self.instruction_panel_title_inner_rect = self.instruction_panel_title_paper_rect.inflate(-24, -24)
+
+        if all(idx in self.instruction_title_paper_parts for idx in range(1, 10)):
+            self.instruction_panel_title_paper_surface = self._build_instruction_panel_surface(
+                self.instruction_title_paper_parts,
+                self.instruction_panel_title_paper_rect.size,
+            )
+            self.instruction_panel_title_inner_rect = self._get_panel_inner_rect(
+                self.instruction_title_paper_parts,
+                self.instruction_panel_title_paper_rect,
+            )
+
+        body_width, body_height = self.instruction_body_paper_size
+        body_offset_x, body_top = self.instruction_body_paper_offset
+        self.instruction_panel_paper_rect = pygame.Rect(0, 0, body_width, body_height)
+        self.instruction_panel_paper_rect.centerx = self.instruction_panel_board_inner_rect.centerx + body_offset_x
+        self.instruction_panel_paper_rect.top = self.instruction_panel_board_inner_rect.top + body_top
+        self.instruction_panel_inner_rect = self.instruction_panel_paper_rect.inflate(-24, -24)
+
+        if all(idx in self.instruction_paper_parts for idx in range(1, 10)):
+            self.instruction_panel_paper_surface = self._build_instruction_panel_surface(
+                self.instruction_paper_parts,
+                self.instruction_panel_paper_rect.size,
+            )
+            self.instruction_panel_inner_rect = self._get_panel_inner_rect(
+                self.instruction_paper_parts,
+                self.instruction_panel_paper_rect,
+            )
+
+    # ------------------------------------------------------------------
+    # Green Board nine-slice helpers
+    # ------------------------------------------------------------------
+    def _blit_tiled_region(self, surface, tile, target_rect):
+        if target_rect.width <= 0 or target_rect.height <= 0:
+            return
+
+        tile_w, tile_h = tile.get_size()
+        for draw_y in range(target_rect.top, target_rect.bottom, tile_h):
+            seg_h = min(tile_h, target_rect.bottom - draw_y)
+            for draw_x in range(target_rect.left, target_rect.right, tile_w):
+                seg_w = min(tile_w, target_rect.right - draw_x)
+                surface.blit(
+                    tile,
+                    (draw_x, draw_y),
+                    pygame.Rect(0, 0, seg_w, seg_h),
+                )
+
+    def _build_instruction_panel_surface(self, parts, size):
+        """Build a tiled nine-slice surface for the instruction popup layers."""
+        p = parts
+        width, height = size
+        tl, tm, tr = p[1], p[2], p[3]
+        ml, mm, mr = p[4], p[5], p[6]
+        bl, bm, br = p[7], p[8], p[9]
+
+        lw = ml.get_width()
+        rw = mr.get_width()
+        th = tm.get_height()
+        bh = bm.get_height()
+
+        width  = max(width,  lw + rw + mm.get_width())
+        height = max(height, th + bh + mm.get_height())
+
+        surf = pygame.Surface((width, height), pygame.SRCALPHA)
+        iw = width  - lw - rw
+        ih = height - th - bh
+
+        self._blit_tiled_region(surf, tm, pygame.Rect(lw, 0, iw, th))
+        self._blit_tiled_region(surf, bm, pygame.Rect(lw, height - bh, iw, bh))
+        self._blit_tiled_region(surf, ml, pygame.Rect(0, th, lw, ih))
+        self._blit_tiled_region(surf, mr, pygame.Rect(width - rw, th, rw, ih))
+        self._blit_tiled_region(surf, mm, pygame.Rect(lw, th, iw, ih))
+
+        surf.blit(tl, (0,          0))
+        surf.blit(tr, (width - rw, 0))
+        surf.blit(bl, (0,          height - bh))
+        surf.blit(br, (width - rw, height - bh))
+        return surf
+
+    def _get_panel_inner_rect(self, parts, outer_rect):
+        """Return the usable inner rect inside a nine-slice border."""
+        p = parts
+        lw = p[4].get_width()
+        rw = p[6].get_width()
+        th = p[2].get_height()
+        bh = p[8].get_height()
+        return pygame.Rect(
+            outer_rect.left + lw,
+            outer_rect.top  + th,
+            max(0, outer_rect.width  - lw - rw),
+            max(0, outer_rect.height - th - bh),
+        )
+
+    def _build_fallback_close_button_surface(self):
+        width, height = self.instruction_close_button_size
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        pygame.draw.rect(surface, (113, 178, 132), surface.get_rect(), border_radius=6)
+        pygame.draw.rect(surface, (47, 73, 62), surface.get_rect(), width=3, border_radius=6)
+        pygame.draw.line(surface, (47, 73, 62), (10, 10), (width - 10, height - 10), 3)
+        pygame.draw.line(surface, (47, 73, 62), (width - 10, 10), (10, height - 10), 3)
+        return surface
+
+    def _get_instruction_hover_surface(self, surface, hovered):
+        if not hovered:
+            return surface
+
+        scaled_width = max(1, round(surface.get_width() * self.instruction_button_hover_scale))
+        scaled_height = max(1, round(surface.get_height() * self.instruction_button_hover_scale))
+        return pygame.transform.scale(surface, (scaled_width, scaled_height))
+
+    def _build_instruction_icon_button_surface(self, icon_path, size, icon_scale):
+        try:
+            button_surface = load_image(
+                "asset/graphics/ui/Green Button/1.png",
+                size=size,
+            )
+            icon_surface = load_image(icon_path, scale=icon_scale)
+            icon_rect = icon_surface.get_rect(center=button_surface.get_rect().center)
+            button_surface.blit(icon_surface, icon_rect)
+            return button_surface
+        except Exception as e:
+            print(f"Instruction icon button load failed for {icon_path}: {e}")
+            return self._build_fallback_close_button_surface()
+
+    # ------------------------------------------------------------------
+
     def draw_instruction_panel(self):
         overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 130))
         self.screen.blit(overlay, (0, 0))
 
-        pygame.draw.rect(self.screen, (23, 39, 66), self.panel_rect, border_radius=24)
+        # Draw the Green Board nine-slice frame
+        if self.instruction_panel_surface is not None:
+            self.screen.blit(self.instruction_panel_surface, self.panel_rect.topleft)
+        else:
+            # Fallback plain rectangle if asset not found
+            pygame.draw.rect(self.screen, (23, 39, 66), self.panel_rect, border_radius=24)
+            pygame.draw.rect(self.screen, (255, 214, 82), self.panel_rect, width=4, border_radius=24)
 
+        if self.instruction_panel_paper_surface is not None:
+            self.screen.blit(self.instruction_panel_paper_surface, self.instruction_panel_paper_rect.topleft)
+        if self.instruction_panel_title_paper_surface is not None:
+            self.screen.blit(self.instruction_panel_title_paper_surface, self.instruction_panel_title_paper_rect.topleft)
+
+        # Use the inner rect (inside the border) for all content placement
+        ir = self.instruction_panel_inner_rect
+
+        # --- Water background (page 4) ---
         WATER_PAGE_INDEX = 4
         if self.instruction_page == WATER_PAGE_INDEX and self.water_body:
             tile_w = self.water_body.get_width()
             tile_h = self.water_body.get_height()
-            pr = self.panel_rect
             pad = 4
-            half_y = pr.height // 2
-            water_surf = pygame.Surface((pr.width - pad * 2, half_y), pygame.SRCALPHA)
+            half_y = ir.height // 2
+            water_surf = pygame.Surface((ir.width - pad * 2, half_y), pygame.SRCALPHA)
             ww, wh = water_surf.get_size()
             body_tile = self.water_body.copy()
             body_tile.set_alpha(self.water_alpha)
@@ -608,80 +991,76 @@ class StartScreen:
                 top_frame.set_alpha(self.water_alpha)
                 for tx in range(0, ww, tile_w):
                     water_surf.blit(top_frame, (tx, 0))
-            self.screen.blit(water_surf, (pr.left + pad, pr.top + half_y))
-
-        pygame.draw.rect(
-            self.screen,
-            (255, 214, 82),
-            self.panel_rect,
-            width=4,
-            border_radius=24,
-        )
+            self.screen.blit(water_surf, (ir.left + pad, ir.top + half_y))
 
         page = self.instruction_pages[self.instruction_page]
 
-        title_text = self.font_sub.render(page["title"], True, (255, 244, 214))
-        title_rect = title_text.get_rect(center=(self.panel_rect.centerx, self.panel_rect.top + 52))
-        self.screen.blit(title_text, title_rect)
+        # --- Title ---
+        title_text = self.render_instruction_title_text(page["title"])
+        if title_text is None:
+            title_text = self.font_sub.render(page["title"], True, (255, 244, 214))
+        if self.instruction_panel_title_paper_surface is not None:
+            tir = self.instruction_panel_title_inner_rect
+            title_rect = title_text.get_rect(center=(tir.centerx, tir.centery + 8))
+            self.screen.blit(title_text, title_rect)
+        else:
+            title_rect = title_text.get_rect(center=(ir.centerx, ir.top + 32))
+            self.screen.blit(title_text, title_rect)
 
-        divider_y = self.panel_rect.top + 80
-        pygame.draw.line(
-            self.screen,
-            (255, 214, 82),
-            (self.panel_rect.left + 40, divider_y),
-            (self.panel_rect.right - 40, divider_y),
-            1,
-        )
-
+        # --- Content lines ---
+        line_start_y = ir.top + (28 if self.instruction_panel_title_paper_surface is not None else 82)
+        if len(page["lines"]) > 1:
+            line_spacing = min(
+                40,
+                max(26, (ir.bottom - 22 - line_start_y) // (len(page["lines"]) - 1)),
+            )
+        else:
+            line_spacing = 0
         for index, line in enumerate(page["lines"]):
-            line_text = self.font_panel.render(line, True, (232, 240, 255))
+            line_text = self.render_instruction_body_text(line)
+            if line_text is None:
+                line_text = self.font_panel.render(line, True, (232, 240, 255))
             line_rect = line_text.get_rect(
-                center=(self.panel_rect.centerx, self.panel_rect.top + 108 + index * 42)
+                center=(ir.centerx, line_start_y + index * line_spacing)
             )
             self.screen.blit(line_text, line_rect)
 
+        # --- Sprite decorations ---
         HEALTH_PAGE_INDEX = 2
         if self.instruction_page == HEALTH_PAGE_INDEX and self.potion_frames:
             potion_frame = self.potion_frames[int(self.potion_frame_index)]
-            sprite_x = self.panel_rect.centerx + 320
-            sprite_y = self.panel_rect.top + 108 + 2 * 42
+            sprite_x = ir.right - 60
+            sprite_y = line_start_y + 2 * line_spacing
             potion_rect = potion_frame.get_rect(center=(sprite_x, sprite_y))
             self.screen.blit(potion_frame, potion_rect)
 
         ENEMIES_PAGE_INDEX = 3
         if self.instruction_page == ENEMIES_PAGE_INDEX:
-            sprite_x = self.panel_rect.centerx + 320
+            sprite_x = ir.right - 60
             enemy_sprites = [
-                (self.tooth_frames,  self.tooth_fi),
-                (self.shell_frames,  self.shell_fi),
-                (self.saw_frames,    self.saw_fi),
+                (self.tooth_frames, self.tooth_fi),
+                (self.shell_frames, self.shell_fi),
+                (self.saw_frames,   self.saw_fi),
             ]
             for row, (frames, fi) in enumerate(enemy_sprites):
                 if not frames:
                     continue
                 frame = frames[int(fi)]
-                sprite_y = self.panel_rect.top + 108 + row * 42
+                sprite_y = line_start_y + row * line_spacing
                 sprite_rect = frame.get_rect(center=(sprite_x, sprite_y))
                 self.screen.blit(frame, sprite_rect)
 
+        # --- Page dots ---
         total_pages = len(self.instruction_pages)
         dot_radius = 5
         dot_spacing = 18
         dots_total_w = total_pages * dot_spacing - (dot_spacing - dot_radius * 2)
-        dot_start_x = self.panel_rect.centerx - dots_total_w // 2
-        dot_y = self.panel_rect.bottom - 80
+        dot_start_x = ir.centerx - dots_total_w // 2
+        dot_y = self.panel_rect.bottom - 90
         for i in range(total_pages):
             dot_x = dot_start_x + i * dot_spacing
             color = (255, 214, 82) if i == self.instruction_page else (100, 100, 130)
             pygame.draw.circle(self.screen, color, (dot_x, dot_y), dot_radius)
-
-        arrow_hint = self.font_panel.render(
-            "LEFT RIGHT  to navigate",
-            True,
-            (160, 170, 210),
-        )
-        hint_rect = arrow_hint.get_rect(center=(self.panel_rect.centerx, self.panel_rect.bottom - 20))
-        self.screen.blit(arrow_hint, hint_rect)
 
     def handle_event(self, event):
         if self.show_instructions:
@@ -700,7 +1079,9 @@ class StartScreen:
                     return None
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self.prev_rect.collidepoint(event.pos):
+                if self.instruction_close_button_rect.collidepoint(event.pos):
+                    self.show_instructions = False
+                elif self.prev_rect.collidepoint(event.pos):
                     self.instruction_page = max(0, self.instruction_page - 1)
                 elif self.next_rect.collidepoint(event.pos):
                     if self.instruction_page < len(self.instruction_pages) - 1:
@@ -1021,7 +1402,6 @@ class LoseScreen:
             return "exit"
 
         return None
-
 class WinScreen:
     def __init__(self, screen):
         self.screen = screen

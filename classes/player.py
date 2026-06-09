@@ -17,7 +17,7 @@ class Player:
         self.facing_right = True
         self.previous_y = self.rect.y
 
-        self.max_points = 5
+        self.max_points = SETTINGS.get("MAX_HEALTH", 10)
         self.points = self.max_points
         self.coins = 0
         self.coin_progress = 0

@@ -20,6 +20,7 @@ SETTINGS = {
     "HUD_COIN_SCALE": 1.45,
     "COINS_PER_HEALTH": 100,
     "COIN_ICON_VALUE": 20,
+    "MAX_HEALTH": 10,
     "COLLECTIBLE_COIN_VALUES": {
         "silver": 10,
         "gold": 20,

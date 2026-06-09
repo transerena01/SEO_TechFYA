@@ -100,6 +100,30 @@ time_limit = 120  # seconds
 game_map = GameMap(SETTINGS["MAP_FILE"])
 map_objects = game_map.get_objects()
 
+# Replace the two removed saws (ids 77, 68) with crate platforms at the same x positions.
+# Crates are 50x36; stack 3 high so tops sit well above water (y=960).
+# x=2368 and x=2560 are the two saw positions.
+_CRATE_W, _CRATE_H = 50, 36
+_PLATFORM_BASES = [2368, 2560]   # x centres of the two gaps
+_STACK_COUNT = 3                  # crates per stack
+_EXTRA_ID_START = 9000            # ids that won't clash with any real map object
+for _pi, _base_x in enumerate(_PLATFORM_BASES):
+    for _ci in range(_STACK_COUNT):
+        _cy = 960 - (_CRATE_H * (_ci + 1))   # stack upward from water
+        map_objects.append({
+            "id":         _EXTRA_ID_START + _pi * _STACK_COUNT + _ci,
+            "name":       "crate",
+            "layer":      "Objects",
+            "x":          _base_x - _CRATE_W // 2,
+            "y":          _cy,
+            "width":      _CRATE_W,
+            "height":     _CRATE_H,
+            "gid":        None,
+            "raw_gid":    None,
+            "flip_x":     False,
+            "properties": {},
+        })
+
 # Win condition: player touches the flag
 _flag_obj = game_map.get_object_by_name("flag")
 if _flag_obj:
@@ -134,7 +158,11 @@ hazard_object_names = {"floor_spike", "saw"}
 solid_object_rects = []
 hazard_rects = []
 
+REMOVED_OBJECT_IDS = {77, 68}  # two rightmost saws above water
+
 for map_object in map_objects:
+    if map_object.get("id") in REMOVED_OBJECT_IDS:
+        continue
     object_name = (map_object["name"] or "").lower()
     object_layer = (map_object["layer"] or "").lower()
     object_rect = pygame.Rect(
@@ -190,7 +218,7 @@ else:
 
 game_hud = GameHUD(
     hud_position,
-    heart_count=5,
+    heart_count=SETTINGS["MAX_HEALTH"],
     coin_scale=SETTINGS["HUD_COIN_SCALE"],
 )
 
@@ -264,6 +292,8 @@ object_layer_animated_names = {
 }
 
 for map_object in map_objects:
+    if map_object.get("id") in REMOVED_OBJECT_IDS:
+        continue
     object_name = (map_object["name"] or "").lower()
     object_layer = (map_object["layer"] or "").lower()
     asset_folder = animated_object_folders.get(object_name)
@@ -403,6 +433,8 @@ moving_hazard_object_names = {"saw", "spike"}
 moving_spike_image_path = "asset/graphics/enemies/spike_ball/Spiked Ball.png"
 
 for map_object in map_objects:
+    if map_object.get("id") in REMOVED_OBJECT_IDS:
+        continue
     object_name = (map_object["name"] or "").lower()
     object_layer = (map_object["layer"] or "").lower()
     object_properties = map_object.get("properties", {})
@@ -504,7 +536,7 @@ def enter_lose_state():
     state = "lose"
 
 
-def enter_win_state():
+def enter_win_state(time_left):
     global win_background, state, win_time_left
     win_background = screen.copy()
     win_time_left = time_left
@@ -674,7 +706,7 @@ while running:
 
         # Win condition — player reaches the Vietnam flag
         if flag_rect and player.rect.colliderect(flag_rect):
-            enter_win_state()
+            enter_win_state(time_left)
             continue
 
         offset = camera.get_offset()

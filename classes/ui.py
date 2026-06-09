@@ -224,8 +224,8 @@ class StartScreen:
                 "title": "Movement",
                 "lines": [
                     "Use the arrow keys to move your character.",
-                    "LEFT RIGHT     walk left or right",
-                    "UP             jump",
+                    "LEFT RIGHT    walk left or right",
+                    "UP            jump",
                     "You can jump over enemies and hazards.",
                 ],
             },
@@ -260,6 +260,7 @@ class StartScreen:
                 "title": "Water",
                 "lines": [
                     "Falling into water is instant death.",
+                    "You lose if your body sinks too deep.",
                     "Stay on platforms above the waterline.",
                 ],
             },
@@ -442,6 +443,21 @@ class StartScreen:
             self.draw_fierce_tooth()
 
         self.draw_menu_text()
+ 
+        tip_text = self.font_panel.render(
+            "TIP: Hold UP longer for a higher jump!",
+            True,
+            (255, 244, 180),
+        )
+        tip_x = self.width // 2 - tip_text.get_width() // 2
+        tip_y = self.height - tip_text.get_height() - 18
+        tip_shadow = self.font_panel.render(
+            "TIP: Hold UP longer for a higher jump!",
+            True,
+            (0, 0, 0),
+        )
+        self.screen.blit(tip_shadow, (tip_x + 1, tip_y + 1))
+        self.screen.blit(tip_text, (tip_x, tip_y))
 
         if self.show_instructions:
             self.draw_instruction_panel()
@@ -1104,7 +1120,7 @@ class WinScreen:
         self.menu_rect  = pygame.Rect(0, 0, 0, 0)
         self.exit_rect  = pygame.Rect(0, 0, 0, 0)
 
-        self._title_surface = self._build_banner("YOU WIN!")
+        self._title_surface = self._build_banner("YOU WIN")
         self._lower_surface = self._build_lower_panel()
         self._retry_surface_normal  = self._build_button("RETRY",  hovered=False)
         self._retry_surface_hovered = self._build_button("RETRY",  hovered=True)
@@ -1228,7 +1244,7 @@ class WinScreen:
         board.blit(paper, pr)
 
         score_surf = self._render_text("SCORE:" + str(score))
-        time_surf  = self._render_text("TIME:" + str(time_left) + "S LEFT")
+        time_surf  = self._render_text("TIME:" + str(time_left) + "S")
         if score_surf:
             board.blit(score_surf, score_surf.get_rect(center=(pr.centerx, pr.centery - 18)))
         if time_surf:
@@ -1242,30 +1258,35 @@ class WinScreen:
             self.flag_fi = (self.flag_fi + self.flag_speed) % len(self.flag_frames)
 
     def draw(self, score, time_left):
+        # Golden celebratory overlay (different from lose screen's dark overlay)
         overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, self.overlay_alpha))
+        overlay.fill((255, 200, 0, 60))
         self.screen.blit(overlay, (0, 0))
 
-        upper_surface = self._build_upper_panel(score, time_left)
-
-        if self._title_surface:
-            self.screen.blit(self._title_surface,
-                             self._title_surface.get_rect(center=(self.width//2, 145)))
-        self.screen.blit(upper_surface,
-                         upper_surface.get_rect(center=(self.width//2, 320)))
-
-        # Animated flag centred above the score panel
+        # Animated flag — top centre
         flag_draw = None
         if self.flag_frames:
             flag_draw = self.flag_frames[int(self.flag_fi)]
         elif self.flag_image:
             flag_draw = self.flag_image
         if flag_draw is not None:
-            flag_rect = flag_draw.get_rect(center=(self.width//2, 145 +
-                (self._title_surface.get_height()//2 if self._title_surface else 40) + 70))
-            self.screen.blit(flag_draw, flag_rect)
+            self.screen.blit(flag_draw, flag_draw.get_rect(center=(self.width // 2, 110)))
 
-        lower_rect = self._lower_surface.get_rect(center=(self.width//2, 510))
+        # "YOU WIN" banner just below flag
+        if self._title_surface:
+            banner_y = 200 if flag_draw is None else 195
+            self.screen.blit(
+                self._title_surface,
+                self._title_surface.get_rect(center=(self.width // 2, banner_y)),
+            )
+
+        # Score + time panel in the middle
+        upper_surface = self._build_upper_panel(score, time_left)
+        upper_rect = upper_surface.get_rect(center=(self.width // 2, 360))
+        self.screen.blit(upper_surface, upper_rect)
+
+        # Button bar at the bottom
+        lower_rect = self._lower_surface.get_rect(center=(self.width // 2, 530))
         self.screen.blit(self._lower_surface, lower_rect)
 
         mouse_pos = pygame.mouse.get_pos()
@@ -1274,8 +1295,8 @@ class WinScreen:
         ew  = self._exit_surface_normal.get_width()
         gap = 40
         total = mw + rw + ew + gap * 2
-        bx    = lower_rect.centerx - total // 2
-        by    = lower_rect.centery
+        bx = lower_rect.centerx - total // 2
+        by = lower_rect.centery
 
         menu_cx  = bx + mw // 2
         retry_cx = bx + mw + gap + rw // 2

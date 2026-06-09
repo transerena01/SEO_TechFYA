@@ -100,29 +100,27 @@ time_limit = 120  # seconds
 game_map = GameMap(SETTINGS["MAP_FILE"])
 map_objects = game_map.get_objects()
 
-# Replace the two removed saws (ids 77, 68) with crate platforms at the same x positions.
-# Crates are 50x36; stack 3 high so tops sit well above water (y=960).
-# x=2368 and x=2560 are the two saw positions.
-_CRATE_W, _CRATE_H = 50, 36
-_PLATFORM_BASES = [2368, 2560]   # x centres of the two gaps
-_STACK_COUNT = 3                  # crates per stack
-_EXTRA_ID_START = 9000            # ids that won't clash with any real map object
-for _pi, _base_x in enumerate(_PLATFORM_BASES):
-    for _ci in range(_STACK_COUNT):
-        _cy = 960 - (_CRATE_H * (_ci + 1))   # stack upward from water
-        map_objects.append({
-            "id":         _EXTRA_ID_START + _pi * _STACK_COUNT + _ci,
-            "name":       "crate",
-            "layer":      "Objects",
-            "x":          _base_x - _CRATE_W // 2,
-            "y":          _cy,
-            "width":      _CRATE_W,
-            "height":     _CRATE_H,
-            "gid":        None,
-            "raw_gid":    None,
-            "flip_x":     False,
-            "properties": {},
-        })
+# Add a barrel platform at the gap near x=2048 (where players keep falling into water).
+# Barrels are 46x50; place a row of 4 side-by-side so the player has a safe landing spot.
+_BARREL_W, _BARREL_H = 46, 50
+_BARREL_ROW_X = 2048        # centre of the platform
+_BARREL_COUNT = 4
+_BARREL_Y = 960 - _BARREL_H  # sit right on top of the water line
+_BARREL_START_X = _BARREL_ROW_X - (_BARREL_COUNT * _BARREL_W) // 2
+for _bi in range(_BARREL_COUNT):
+    map_objects.append({
+        "id":         9100 + _bi,
+        "name":       "barrel",
+        "layer":      "Objects",
+        "x":          _BARREL_START_X + _bi * _BARREL_W,
+        "y":          _BARREL_Y,
+        "width":      _BARREL_W,
+        "height":     _BARREL_H,
+        "gid":        None,
+        "raw_gid":    None,
+        "flip_x":     False,
+        "properties": {},
+    })
 
 # Win condition: player touches the flag
 _flag_obj = game_map.get_object_by_name("flag")
@@ -158,7 +156,22 @@ hazard_object_names = {"floor_spike", "saw"}
 solid_object_rects = []
 hazard_rects = []
 
-REMOVED_OBJECT_IDS = {77, 68}  # two rightmost saws above water
+REMOVED_OBJECT_IDS = {76}  # saw sitting above the barrel platform
+
+# Add a potion on top of the barrel platform at x=2048
+map_objects.append({
+    "id":         9200,
+    "name":       "potion",
+    "layer":      "Items",
+    "x":          2048 - 32,
+    "y":          _BARREL_Y - 64,
+    "width":      64,
+    "height":     64,
+    "gid":        None,
+    "raw_gid":    None,
+    "flip_x":     False,
+    "properties": {},
+})
 
 for map_object in map_objects:
     if map_object.get("id") in REMOVED_OBJECT_IDS:
@@ -223,31 +236,6 @@ game_hud = GameHUD(
 )
 
 teeth = []
-tooth_objects = [
-    obj for obj in map_objects
-    if (obj["name"] or "").lower() == "tooth"
-]
-
-for tooth_object in tooth_objects:
-    tooth_size = (
-        max(1, round(tooth_object["width"])),
-        max(1, round(tooth_object["height"])),
-    )
-    tooth_size = scale_size(tooth_size, SETTINGS["TOOTH_SCALE"])
-    tooth_spawn = (
-        round(tooth_object["x"] + (tooth_object["width"] / 2)),
-        round(tooth_object["y"] + tooth_object["height"]),
-    )
-    tooth = Tooth(0, 0, width=tooth_size[0], height=tooth_size[1])
-    tooth.rect.midbottom = tooth_spawn
-    tooth.start_x = tooth.rect.x
-    teeth.append(tooth)
-
-if not teeth:
-    fallback_tooth = Tooth(500, 400)
-    fallback_tooth.start_x = fallback_tooth.rect.x
-    teeth.append(fallback_tooth)
-
 animated_objects = []
 collectibles = []
 shells = []
@@ -258,257 +246,268 @@ water_rects = []
 world_rect = pygame.Rect(0, 0, game_map.pixel_width, game_map.pixel_height)
 moving_platform_system = MovingPlatformSystem(terrain_rects)
 
-animated_object_folders = {
-    "flag": "asset/graphics/level/flag",
-    "saw": "asset/graphics/enemies/saw/animation",
-    "floor_spike": "asset/graphics/enemies/floor_spikes",
-    "palm_bg": "asset/graphics/level/palms/palm_bg",
-    "palm_bg_left": "asset/graphics/level/palms/palm_bg_left",
-    "palm_bg_right": "asset/graphics/level/palms/palm_bg_right",
-    "palm_small": "asset/graphics/level/palms/palm_small",
-    "palm_large": "asset/graphics/level/palms/palm_large",
-    "gold": "asset/graphics/items/gold",
-    "silver": "asset/graphics/items/silver",
-    "diamond": "asset/graphics/items/diamond",
-    "potion": "asset/graphics/items/potion",
-    "skull": "asset/graphics/items/skull",
-}
-static_object_images = {
-    "barrel": "asset/graphics/objects/barrel.png",
-    "crate": "asset/graphics/objects/crate.png",
-}
-pickup_object_names = {"gold", "silver", "diamond", "potion", "skull"}
-pickup_coin_values = SETTINGS["COLLECTIBLE_COIN_VALUES"]
-pickup_health_values = SETTINGS["COLLECTIBLE_HEALTH_VALUES"]
-object_layer_animated_names = {
-    "flag",
-    "saw",
-    "floor_spike",
-    "palm_bg",
-    "palm_bg_left",
-    "palm_bg_right",
-    "palm_small",
-    "palm_large",
-}
 
-for map_object in map_objects:
-    if map_object.get("id") in REMOVED_OBJECT_IDS:
-        continue
-    object_name = (map_object["name"] or "").lower()
-    object_layer = (map_object["layer"] or "").lower()
-    asset_folder = animated_object_folders.get(object_name)
-    static_image_path = static_object_images.get(object_name)
-    if asset_folder is None and static_image_path is None:
-        continue
+def spawn_entities():
+    global teeth, animated_objects, collectibles, shells
+    global moving_objects, moving_hazard_objects, water_areas, water_rects
+    global moving_platform_system
 
-    if object_name in pickup_object_names and object_layer != "items":
-        continue
+    teeth = []
+    animated_objects = []
+    collectibles = []
+    shells = []
+    moving_objects = []
+    moving_hazard_objects = []
+    water_areas = []
+    water_rects = []
+    moving_platform_system = MovingPlatformSystem(terrain_rects)
 
-    if (
-        object_name in object_layer_animated_names
-        or object_name in static_object_images
-    ) and object_layer != "objects":
-        continue
+    tooth_objects = [
+        obj for obj in map_objects
+        if (obj["name"] or "").lower() == "tooth"
+    ]
+    for tooth_object in tooth_objects:
+        tooth_size = (
+            max(1, round(tooth_object["width"])),
+            max(1, round(tooth_object["height"])),
+        )
+        tooth_size = scale_size(tooth_size, SETTINGS["TOOTH_SCALE"])
+        tooth_spawn = (
+            round(tooth_object["x"] + (tooth_object["width"] / 2)),
+            round(tooth_object["y"] + tooth_object["height"]),
+        )
+        tooth = Tooth(0, 0, width=tooth_size[0], height=tooth_size[1])
+        tooth.rect.midbottom = tooth_spawn
+        tooth.start_x = tooth.rect.x
+        teeth.append(tooth)
+    if not teeth:
+        fallback_tooth = Tooth(500, 400)
+        fallback_tooth.start_x = fallback_tooth.rect.x
+        teeth.append(fallback_tooth)
 
-    object_position = (
-        round(map_object["x"] + (map_object["width"] / 2)),
-        round(map_object["y"] + map_object["height"]),
-    )
-    object_size = (
-        max(1, round(map_object["width"])),
-        max(1, round(map_object["height"])),
-    )
-    if object_name in pickup_object_names:
-        if object_name == "skull":
-            object_size = scale_size_xy(
-                object_size,
-                SETTINGS["SKULL_SCALE_X"],
-                SETTINGS["SKULL_SCALE_Y"],
+    animated_object_folders = {
+        "flag": "asset/graphics/level/flag",
+        "saw": "asset/graphics/enemies/saw/animation",
+        "floor_spike": "asset/graphics/enemies/floor_spikes",
+        "palm_bg": "asset/graphics/level/palms/palm_bg",
+        "palm_bg_left": "asset/graphics/level/palms/palm_bg_left",
+        "palm_bg_right": "asset/graphics/level/palms/palm_bg_right",
+        "palm_small": "asset/graphics/level/palms/palm_small",
+        "palm_large": "asset/graphics/level/palms/palm_large",
+        "gold": "asset/graphics/items/gold",
+        "silver": "asset/graphics/items/silver",
+        "diamond": "asset/graphics/items/diamond",
+        "potion": "asset/graphics/items/potion",
+        "skull": "asset/graphics/items/skull",
+    }
+    static_object_images = {
+        "barrel": "asset/graphics/objects/barrel.png",
+        "crate": "asset/graphics/objects/crate.png",
+    }
+    pickup_object_names = {"gold", "silver", "diamond", "potion", "skull"}
+    pickup_coin_values = SETTINGS["COLLECTIBLE_COIN_VALUES"]
+    pickup_health_values = SETTINGS["COLLECTIBLE_HEALTH_VALUES"]
+    object_layer_animated_names = {
+        "flag", "saw", "floor_spike",
+        "palm_bg", "palm_bg_left", "palm_bg_right",
+        "palm_small", "palm_large",
+    }
+
+    for map_object in map_objects:
+        if map_object.get("id") in REMOVED_OBJECT_IDS:
+            continue
+        object_name = (map_object["name"] or "").lower()
+        object_layer = (map_object["layer"] or "").lower()
+        asset_folder = animated_object_folders.get(object_name)
+        static_image_path = static_object_images.get(object_name)
+        if asset_folder is None and static_image_path is None:
+            continue
+        if object_name in pickup_object_names and object_layer != "items":
+            continue
+        if (
+            object_name in object_layer_animated_names
+            or object_name in static_object_images
+        ) and object_layer != "objects":
+            continue
+        object_position = (
+            round(map_object["x"] + (map_object["width"] / 2)),
+            round(map_object["y"] + map_object["height"]),
+        )
+        object_size = (
+            max(1, round(map_object["width"])),
+            max(1, round(map_object["height"])),
+        )
+        if object_name in pickup_object_names:
+            if object_name == "skull":
+                object_size = scale_size_xy(
+                    object_size,
+                    SETTINGS["SKULL_SCALE_X"],
+                    SETTINGS["SKULL_SCALE_Y"],
+                )
+            else:
+                object_size = scale_size(object_size, SETTINGS["ITEM_SCALE"])
+            collectibles.append(
+                Collectible.from_folder(
+                    asset_folder,
+                    object_position,
+                    item_name=object_name,
+                    coin_value=pickup_coin_values.get(object_name, 0),
+                    health_value=pickup_health_values.get(object_name, 0),
+                    size=object_size,
+                    anchor="midbottom",
+                    animation_speed=8,
+                )
             )
-        else:
-            object_size = scale_size(object_size, SETTINGS["ITEM_SCALE"])
-        collectibles.append(
-            Collectible.from_folder(
+            continue
+        if static_image_path is not None:
+            animated_objects.append(
+                AnimatedSprite(
+                    object_position,
+                    [load_image(static_image_path, size=object_size)],
+                    anchor="midbottom",
+                )
+            )
+            continue
+        animated_objects.append(
+            AnimatedSprite.from_folder(
                 asset_folder,
                 object_position,
-                item_name=object_name,
-                coin_value=pickup_coin_values.get(object_name, 0),
-                health_value=pickup_health_values.get(object_name, 0),
                 size=object_size,
                 anchor="midbottom",
                 animation_speed=8,
             )
         )
-        continue
 
-    if static_image_path is not None:
-        animated_objects.append(
-            AnimatedSprite(
-                object_position,
-                [load_image(static_image_path, size=object_size)],
-                anchor="midbottom",
+    shell_objects = [
+        obj for obj in map_objects
+        if (obj["name"] or "").lower() == "shell"
+    ]
+    for shell_object in shell_objects:
+        shell_spawn = (
+            round(shell_object["x"] + (shell_object["width"] / 2)),
+            round(shell_object["y"] + shell_object["height"]),
+        )
+        shell_size = (
+            max(1, round(shell_object["width"])),
+            max(1, round(shell_object["height"])),
+        )
+        shell_properties = shell_object.get("properties", {})
+        shell_facing_right = bool(shell_properties.get("reverse", False)) ^ bool(
+            shell_object.get("flip_x", False)
+        )
+        shells.append(Shell(shell_spawn, shell_size, reverse=shell_facing_right))
+
+    water_objects = [
+        obj for obj in map_objects
+        if (obj["layer"] or "").lower() == "water"
+        and (obj["name"] or "").lower() == "water"
+    ]
+    for water_object in water_objects:
+        water_rect = pygame.Rect(
+            round(water_object["x"]),
+            round(water_object["y"]),
+            max(1, round(water_object["width"])),
+            max(1, round(water_object["height"])),
+        )
+        water_rects.append(water_rect)
+        water_areas.append(
+            WaterArea.from_assets(
+                water_rect,
+                top_folder="asset/graphics/level/water/top",
+                body_path="asset/graphics/level/water/body.png",
+                animation_speed=6,
             )
         )
-        continue
 
-    animated_objects.append(
-        AnimatedSprite.from_folder(
-            asset_folder,
-            object_position,
-            size=object_size,
-            anchor="midbottom",
-            animation_speed=8,
-        )
-    )
+    moving_object_definitions = {
+        "boat": {
+            "image_path": "asset/graphics/objects/boat/0.png",
+            "size": None,
+            "animation_speed": 0,
+        },
+        "helicopter": {
+            "folder_path": "asset/graphics/level/helicopter",
+            "size": None,
+            "animation_speed": 8,
+        },
+        "saw": {
+            "folder_path": "asset/graphics/enemies/saw/animation",
+            "size": (64, 64),
+            "animation_speed": 12,
+        },
+    }
+    moving_solid_object_names = {"boat", "saw", "helicopter"}
+    moving_hazard_object_names_local = {"saw", "spike"}
+    moving_spike_image_path = "asset/graphics/enemies/spike_ball/Spiked Ball.png"
 
-shell_objects = [
-    obj for obj in map_objects
-    if (obj["name"] or "").lower() == "shell"
-]
-
-for shell_object in shell_objects:
-    shell_spawn = (
-        round(shell_object["x"] + (shell_object["width"] / 2)),
-        round(shell_object["y"] + shell_object["height"]),
-    )
-    shell_size = (
-        max(1, round(shell_object["width"])),
-        max(1, round(shell_object["height"])),
-    )
-    shell_properties = shell_object.get("properties", {})
-    shell_facing_right = bool(shell_properties.get("reverse", False)) ^ bool(
-        shell_object.get("flip_x", False)
-    )
-    shells.append(
-        Shell(
-            shell_spawn,
-            shell_size,
-            reverse=shell_facing_right,
-        )
-    )
-
-water_objects = [
-    obj
-    for obj in map_objects
-    if (obj["layer"] or "").lower() == "water"
-    and (obj["name"] or "").lower() == "water"
-]
-
-for water_object in water_objects:
-    water_rect = pygame.Rect(
-        round(water_object["x"]),
-        round(water_object["y"]),
-        max(1, round(water_object["width"])),
-        max(1, round(water_object["height"])),
-    )
-    water_rects.append(water_rect)
-    water_areas.append(
-        WaterArea.from_assets(
-            water_rect,
-            top_folder="asset/graphics/level/water/top",
-            body_path="asset/graphics/level/water/body.png",
-            animation_speed=6,
-        )
-    )
-
-moving_object_definitions = {
-    "boat": {
-        "image_path": "asset/graphics/objects/boat/0.png",
-        "size": None,
-        "animation_speed": 0,
-    },
-    "helicopter": {
-        "folder_path": "asset/graphics/level/helicopter",
-        "size": None,
-        "animation_speed": 8,
-    },
-    "saw": {
-        "folder_path": "asset/graphics/enemies/saw/animation",
-        "size": (64, 64),
-        "animation_speed": 12,
-    },
-}
-moving_solid_object_names = {"boat", "saw", "helicopter"}
-moving_hazard_object_names = {"saw", "spike"}
-moving_spike_image_path = "asset/graphics/enemies/spike_ball/Spiked Ball.png"
-
-for map_object in map_objects:
-    if map_object.get("id") in REMOVED_OBJECT_IDS:
-        continue
-    object_name = (map_object["name"] or "").lower()
-    object_layer = (map_object["layer"] or "").lower()
-    object_properties = map_object.get("properties", {})
-
-    if object_layer != "moving objects":
-        continue
-
-    if object_name == "spike":
-        object_size = (
-            max(1, round(map_object["width"])),
-            max(1, round(map_object["height"])),
-        )
-        spike_center = (
-            round(map_object["x"] + (map_object["width"] / 2)),
-            round(map_object["y"] + (map_object["height"] / 2)),
-        )
-        start_angle = object_properties.get("start_angle", 0)
-        radius = object_properties.get("radius", 0)
-        orbit_center = (
-            pygame.Vector2(spike_center)
-            - OrbitalSprite.angle_offset(radius, start_angle)
-        )
-        moving_spike = OrbitalSprite(
-            orbit_center,
-            radius,
-            start_angle,
-            [load_image(moving_spike_image_path, size=object_size)],
+    for map_object in map_objects:
+        if map_object.get("id") in REMOVED_OBJECT_IDS:
+            continue
+        object_name = (map_object["name"] or "").lower()
+        object_layer = (map_object["layer"] or "").lower()
+        object_properties = map_object.get("properties", {})
+        if object_layer != "moving objects":
+            continue
+        if object_name == "spike":
+            object_size = (
+                max(1, round(map_object["width"])),
+                max(1, round(map_object["height"])),
+            )
+            spike_center = (
+                round(map_object["x"] + (map_object["width"] / 2)),
+                round(map_object["y"] + (map_object["height"] / 2)),
+            )
+            start_angle = object_properties.get("start_angle", 0)
+            radius = object_properties.get("radius", 0)
+            orbit_center = (
+                pygame.Vector2(spike_center)
+                - OrbitalSprite.angle_offset(radius, start_angle)
+            )
+            moving_spike = OrbitalSprite(
+                orbit_center, radius, start_angle,
+                [load_image(moving_spike_image_path, size=object_size)],
+                speed=object_properties.get("speed", 0),
+                end_angle=object_properties.get("end_angle", -1),
+                anchor="center",
+            )
+            moving_objects.append(moving_spike)
+            moving_hazard_objects.append(moving_spike)
+            continue
+        moving_object_definition = moving_object_definitions.get(object_name)
+        if moving_object_definition is None:
+            continue
+        flip_x = object_properties.get("flip", False)
+        size = moving_object_definition["size"]
+        animation_speed = moving_object_definition["animation_speed"]
+        if "folder_path" in moving_object_definition:
+            frames = AnimatedSprite.load_frames(
+                moving_object_definition["folder_path"],
+                size=size, flip_x=flip_x,
+            )
+        else:
+            frames = [load_image(
+                moving_object_definition["image_path"],
+                size=size, flip_x=flip_x,
+            )]
+        sprite_size = frames[0].get_size()
+        start_position, end_position = get_path_endpoints(map_object, sprite_size)
+        moving_sprite = PathSprite(
+            start_position, end_position, frames,
             speed=object_properties.get("speed", 0),
-            end_angle=object_properties.get("end_angle", -1),
+            animation_speed=animation_speed,
             anchor="center",
         )
-        moving_objects.append(moving_spike)
-        moving_hazard_objects.append(moving_spike)
-        continue
-
-    moving_object_definition = moving_object_definitions.get(object_name)
-    if moving_object_definition is None:
-        continue
-
-    flip_x = object_properties.get("flip", False)
-    size = moving_object_definition["size"]
-    animation_speed = moving_object_definition["animation_speed"]
-
-    if "folder_path" in moving_object_definition:
-        frames = AnimatedSprite.load_frames(
-            moving_object_definition["folder_path"],
-            size=size,
-            flip_x=flip_x,
+        moving_objects.append(moving_sprite)
+        moving_platform_system.register(
+            moving_sprite,
+            solid=object_name in moving_solid_object_names,
+            platform=object_properties.get("platform", False),
         )
-    else:
-        frames = [load_image(
-            moving_object_definition["image_path"],
-            size=size,
-            flip_x=flip_x,
-        )]
+        if object_name in moving_hazard_object_names_local:
+            moving_hazard_objects.append(moving_sprite)
 
-    sprite_size = frames[0].get_size()
-    start_position, end_position = get_path_endpoints(map_object, sprite_size)
-    moving_sprite = PathSprite(
-        start_position,
-        end_position,
-        frames,
-        speed=object_properties.get("speed", 0),
-        animation_speed=animation_speed,
-        anchor="center",
-    )
-    moving_objects.append(moving_sprite)
-    moving_platform_system.register(
-        moving_sprite,
-        solid=object_name in moving_solid_object_names,
-        platform=object_properties.get("platform", False),
-    )
-    if object_name in moving_hazard_object_names:
-        moving_hazard_objects.append(moving_sprite)
+
+spawn_entities()
 
 
 def player_touches_hazard(player_rect, hazard_rect, padding=4):
@@ -518,12 +517,9 @@ def player_touches_hazard(player_rect, hazard_rect, padding=4):
 def player_submerged_in_water(player_rect, water_rect):
     if not player_rect.colliderect(water_rect):
         return False
-
     submerged_height = player_rect.bottom - water_rect.top
     return submerged_height >= player_rect.height * 2.5
 
-
-player.check_ground_support(moving_platform_system.get_collision_rects())
 
 hazard_hit_cooldown_ms = 800
 hazard_last_hit_time = -hazard_hit_cooldown_ms
@@ -561,6 +557,9 @@ def reset_game():
     player.rect.left = max(0, player.rect.left)
     player.rect.top = max(0, player.rect.top)
     player.check_ground_support(terrain_rects)
+
+    spawn_entities()
+    player.check_ground_support(moving_platform_system.get_collision_rects())
 
     # reset camera and timer
     camera.update(player.rect)

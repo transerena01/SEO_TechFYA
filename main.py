@@ -514,16 +514,22 @@ def player_touches_hazard(player_rect, hazard_rect, padding=4):
     return player_rect.colliderect(hazard_rect.inflate(padding * 2, padding * 2))
 
 
-def player_submerged_in_water(player_rect, water_rect):
-    if not player_rect.colliderect(water_rect):
-        return False
-    submerged_height = player_rect.bottom - water_rect.top
-    return submerged_height >= player_rect.height * 2.5
+def player_touching_water(player_rect, water_rect):
+    return player_rect.colliderect(water_rect)
 
 
+# --- Damage timers (outside the loop so they persist between frames) ---
 hazard_hit_cooldown_ms = 800
 hazard_last_hit_time = -hazard_hit_cooldown_ms
 hazard_damage = 1
+
+water_hit_cooldown_ms = 800
+water_last_hit_time = -water_hit_cooldown_ms
+water_damage = 1
+
+# --- Damage flash effect ---
+damage_flash_duration_ms = 400
+damage_flash_end_time = 0
 
 
 def enter_lose_state():
@@ -540,7 +546,8 @@ def enter_win_state(time_left):
 
 
 def reset_game():
-    global player, start_ticks, hazard_last_hit_time, state, lose_background, win_background
+    global player, start_ticks, hazard_last_hit_time, water_last_hit_time
+    global damage_flash_end_time, state, lose_background, win_background
 
     # reset player position
     player_spawn = game_map.get_object_anchor("Player")
@@ -565,6 +572,8 @@ def reset_game():
     camera.update(player.rect)
     start_ticks = pygame.time.get_ticks()
     hazard_last_hit_time = -hazard_hit_cooldown_ms
+    water_last_hit_time = -water_hit_cooldown_ms
+    damage_flash_end_time = 0
     lose_background = None
     win_background = None
     state = "game"
@@ -653,9 +662,14 @@ while running:
         player.move(keys, player_collision_rects)
         player.update()
 
-        if any(player_submerged_in_water(player.rect, water_rect) for water_rect in water_rects):
-            enter_lose_state()
-            continue
+        # Water damage — 1 heart lost every 0.8s while touching water
+        current_time = pygame.time.get_ticks()
+        if any(player_touching_water(player.rect, water_rect) for water_rect in water_rects):
+            if current_time - water_last_hit_time >= water_hit_cooldown_ms:
+                enemy_hit_sound.play()
+                player.take_damage(water_damage)
+                water_last_hit_time = current_time
+                damage_flash_end_time = current_time + damage_flash_duration_ms
 
         # Tooth enemies
         for tooth in teeth:
@@ -663,6 +677,7 @@ while running:
             tooth.update(player)
             if player.points < old_points:
                 enemy_hit_sound.play()
+                damage_flash_end_time = pygame.time.get_ticks() + damage_flash_duration_ms
 
         game_hud.update(dt)
 
@@ -672,6 +687,7 @@ while running:
             shell.update(dt, player, terrain_rects, world_rect)
             if player.points < old_points:
                 enemy_hit_sound.play()
+                damage_flash_end_time = pygame.time.get_ticks() + damage_flash_duration_ms
 
         for water_area in water_areas:
             water_area.update(dt)
@@ -701,6 +717,8 @@ while running:
                 enemy_hit_sound.play()
                 player.take_damage(hazard_damage)
                 hazard_last_hit_time = current_time
+                damage_flash_end_time = current_time + damage_flash_duration_ms
+
         camera.update(player.rect)
 
         # Win condition — player reaches the Vietnam flag
@@ -734,10 +752,25 @@ while running:
 
         game_map.draw_foreground(screen, camera)
         game_hud.draw(screen, player.points, player.max_points, player.coin_progress)
+
+        # Live coin counter
+        score_text = timer_font.render(f"COINS: {player.coins}", True, (255, 244, 214))
+        screen.blit(score_text, (30, 90))
+
         timer_text = timer_font.render(f"TIME: {time_left}", True, (255, 244, 214))
         screen.blit(timer_text, (SETTINGS["WIDTH"] - timer_text.get_width() - 30, 25))
+
+        # Red damage flash — fades out over 400ms whenever player takes damage
+        now = pygame.time.get_ticks()
+        if now < damage_flash_end_time:
+            flash_alpha = int(120 * (damage_flash_end_time - now) / damage_flash_duration_ms)
+            flash_surface = pygame.Surface((SETTINGS["WIDTH"], SETTINGS["HEIGHT"]), pygame.SRCALPHA)
+            flash_surface.fill((220, 30, 30, flash_alpha))
+            screen.blit(flash_surface, (0, 0))
+
         if not player.alive:
             enter_lose_state()
+
     elif state == "lose":
         if lose_background is not None:
             screen.blit(lose_background, (0, 0))

@@ -4,6 +4,7 @@ from classes.loader import (
     load_background,
     load_big_text_glyphs,
     load_coin_frames,
+    load_frames,
     load_font,
     load_image,
     load_heart_frames,
@@ -14,6 +15,342 @@ from classes.loader import (
     load_yellow_board_parts,
     load_yellow_paper_parts,
 )
+
+
+class SpriteTextRenderer:
+    NORMALIZATION_REPLACEMENTS = {
+        "&": " AND ",
+        "+": " PLUS ",
+        "=": " EQUALS ",
+        ".": " ",
+        ",": " ",
+        "(": " ",
+        ")": " ",
+        "-": " ",
+        "/": " ",
+        "!": " ",
+        "?": " ",
+        "'": "",
+    }
+
+    def __init__(self, glyphs, letter_spacing, word_spacing):
+        self.glyphs = glyphs
+        self.letter_spacing = letter_spacing
+        self.word_spacing = word_spacing
+
+    @classmethod
+    def normalize_for_glyphs(cls, label, glyph_map):
+        normalized = label.upper()
+        for old, new in cls.NORMALIZATION_REPLACEMENTS.items():
+            normalized = normalized.replace(old, new)
+
+        cleaned = "".join(char if char == " " or char in glyph_map else " " for char in normalized)
+        return " ".join(cleaned.split())
+
+    def render(self, label):
+        total_width = 0
+        max_height = 0
+
+        for index, char in enumerate(label):
+            if char == " ":
+                total_width += self.word_spacing
+                continue
+
+            glyph = self.glyphs.get(char)
+            if glyph is None:
+                return None
+
+            total_width += glyph.get_width()
+            max_height = max(max_height, glyph.get_height())
+
+            if index < len(label) - 1 and label[index + 1] != " ":
+                total_width += self.letter_spacing
+
+        if total_width <= 0 or max_height <= 0:
+            return None
+
+        surface = pygame.Surface((total_width, max_height), pygame.SRCALPHA)
+        draw_x = 0
+
+        for index, char in enumerate(label):
+            if char == " ":
+                draw_x += self.word_spacing
+                continue
+
+            glyph = self.glyphs[char]
+            surface.blit(glyph, (draw_x, 0))
+            draw_x += glyph.get_width()
+
+            if index < len(label) - 1 and label[index + 1] != " ":
+                draw_x += self.letter_spacing
+
+        return surface
+
+    def render_normalized(self, label):
+        return self.render(self.normalize_for_glyphs(label, self.glyphs))
+
+
+def build_three_slice_surface(parts, left_idx, middle_idx, right_idx, inner_width):
+    left_part = parts[left_idx]
+    middle_part = parts[middle_idx]
+    right_part = parts[right_idx]
+    if inner_width <= 0:
+        middle_count = 0
+    else:
+        middle_count = max(1, (inner_width + middle_part.get_width() - 1) // middle_part.get_width())
+    width = left_part.get_width() + middle_count * middle_part.get_width() + right_part.get_width()
+    height = max(left_part.get_height(), middle_part.get_height(), right_part.get_height())
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+
+    draw_x = 0
+    surface.blit(left_part, (draw_x, 0))
+    draw_x += left_part.get_width()
+
+    for _ in range(middle_count):
+        surface.blit(middle_part, (draw_x, 0))
+        draw_x += middle_part.get_width()
+
+    surface.blit(right_part, (draw_x, 0))
+    return surface
+
+
+def build_six_slice_surface(parts, size):
+    width, height = size
+    top_left = parts[1]
+    top_mid = parts[2]
+    top_right = parts[3]
+    bot_left = parts[7]
+    bot_mid = parts[8]
+    bot_right = parts[9]
+
+    min_w = top_left.get_width() + top_right.get_width() + top_mid.get_width()
+    width = max(width, min_w)
+    min_h = top_left.get_height() + bot_left.get_height()
+    height = max(height, min_h)
+
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+
+    inner_left = top_left.get_width()
+    inner_right = width - top_right.get_width()
+    inner_top = top_left.get_height()
+    inner_bot = height - bot_left.get_height()
+
+    inner_w = inner_right - inner_left
+    inner_h = inner_bot - inner_top
+    if inner_w > 0 and inner_h > 0:
+        strip = pygame.transform.scale(top_mid, (inner_w, top_mid.get_height()))
+        fill = pygame.transform.scale(strip, (inner_w, inner_h))
+        surface.blit(fill, (inner_left, inner_top))
+
+    if inner_h > 0:
+        left_strip = pygame.transform.scale(
+            top_left.subsurface(pygame.Rect(0, top_left.get_height() - 1, top_left.get_width(), 1)),
+            (top_left.get_width(), inner_h),
+        )
+        right_strip = pygame.transform.scale(
+            top_right.subsurface(pygame.Rect(0, top_right.get_height() - 1, top_right.get_width(), 1)),
+            (top_right.get_width(), inner_h),
+        )
+        surface.blit(left_strip, (0, inner_top))
+        surface.blit(right_strip, (width - top_right.get_width(), inner_top))
+
+    draw_x = inner_left
+    while draw_x < inner_right:
+        seg_w = min(top_mid.get_width(), inner_right - draw_x)
+        if seg_w == top_mid.get_width():
+            surface.blit(top_mid, (draw_x, 0))
+            surface.blit(bot_mid, (draw_x, height - bot_mid.get_height()))
+        else:
+            surface.blit(
+                pygame.transform.scale(top_mid, (seg_w, top_mid.get_height())),
+                (draw_x, 0),
+            )
+            surface.blit(
+                pygame.transform.scale(bot_mid, (seg_w, bot_mid.get_height())),
+                (draw_x, height - bot_mid.get_height()),
+            )
+        draw_x += seg_w
+
+    surface.blit(top_left, (0, 0))
+    surface.blit(top_right, (width - top_right.get_width(), 0))
+    surface.blit(bot_left, (0, height - bot_left.get_height()))
+    surface.blit(bot_right, (width - bot_right.get_width(), height - bot_right.get_height()))
+    return surface
+
+
+class ResultScreenBase:
+    def __init__(self, screen, title_label, *, title_padding):
+        self.screen = screen
+        self.width = SETTINGS["WIDTH"]
+        self.height = SETTINGS["HEIGHT"]
+        self.overlay_alpha = 120
+
+        self.text_scale = 5
+        self.text_letter_spacing = 4
+        self.text_word_spacing = 14
+        self.text_renderer = SpriteTextRenderer(
+            load_ui_small_text_glyphs(self.text_scale),
+            self.text_letter_spacing,
+            self.text_word_spacing,
+        )
+
+        self.board_scale = 4
+        self.paper_scale = 4
+        self.banner_scale = 5
+        self.button_scale = 4
+        self.button_hover_scale = 1.08
+
+        self.upper_board_parts = load_scaled_parts(
+            "asset/graphics/ui/Yellow Board",
+            (1, 2, 3, 7, 8, 9),
+            scale_x=self.board_scale,
+            scale_y=self.board_scale,
+        )
+        self.lower_board_parts = load_scaled_parts(
+            "asset/graphics/ui/Yellow Board",
+            (10, 11, 12),
+            scale_x=self.board_scale,
+            scale_y=self.board_scale,
+        )
+        self.paper_parts = load_scaled_parts(
+            "asset/graphics/ui/Orange Paper",
+            (1, 2, 3, 7, 8, 9),
+            scale_x=self.paper_scale,
+            scale_y=self.paper_scale,
+        )
+        self.button_parts = load_scaled_parts(
+            "asset/graphics/ui/Yellow Button",
+            (2, 3, 4),
+            scale_x=self.button_scale,
+            scale_y=self.button_scale,
+        )
+        self.banner_parts = load_scaled_parts(
+            "asset/graphics/ui/Small Banner",
+            (1, 2, 13),
+            scale_x=self.banner_scale,
+            scale_y=self.banner_scale,
+        )
+
+        self.retry_rect = pygame.Rect(0, 0, 0, 0)
+        self.menu_rect = pygame.Rect(0, 0, 0, 0)
+        self.exit_rect = pygame.Rect(0, 0, 0, 0)
+
+        self._title_surface = self.build_banner(
+            title_label,
+            1,
+            2,
+            self.banner_parts[13].get_width(),
+            text_padding=title_padding,
+        )
+        self._lower_surface = self.build_lower_panel()
+        self._retry_surface_normal = self.build_button_surface("RETRY", hovered=False)
+        self._retry_surface_hovered = self.build_button_surface("RETRY", hovered=True)
+        self._menu_surface_normal = self.build_button_surface("MENU", hovered=False)
+        self._menu_surface_hovered = self.build_button_surface("MENU", hovered=True)
+        self._exit_surface_normal = self.build_button_surface("EXIT", hovered=False)
+        self._exit_surface_hovered = self.build_button_surface("EXIT", hovered=True)
+
+    def render_small_text(self, label):
+        return self.text_renderer.render(label)
+
+    def build_three_slice(self, parts, left_idx, middle_idx, right_idx, inner_width):
+        return build_three_slice_surface(parts, left_idx, middle_idx, right_idx, inner_width)
+
+    def build_six_slice(self, parts, size):
+        return build_six_slice_surface(parts, size)
+
+    def build_banner(self, label, left_idx, right_idx, min_inner_width, text_padding=36):
+        text_surface = self.render_small_text(label)
+        if text_surface is None:
+            return None
+
+        middle_idx = 13
+        if text_padding == 0 and min_inner_width == 0:
+            inner_width = 0
+        else:
+            inner_width = max(min_inner_width, text_surface.get_width() + text_padding)
+        inner_width = max(0, inner_width - self.banner_parts[middle_idx].get_width())
+        banner_surface = self.build_three_slice(self.banner_parts, left_idx, middle_idx, right_idx, inner_width)
+        text_rect = text_surface.get_rect(center=(banner_surface.get_width() // 2, banner_surface.get_height() // 2 - 4))
+        banner_surface.blit(text_surface, text_rect)
+        return banner_surface
+
+    def build_button_surface(self, label, hovered):
+        text_surface = self.render_small_text(label)
+        button_surface = self.build_three_slice(self.button_parts, 2, 3, 4, self.button_parts[3].get_width())
+        text_rect = text_surface.get_rect(center=(button_surface.get_width() // 2, button_surface.get_height() // 2 - 4))
+        button_surface.blit(text_surface, text_rect)
+
+        if hovered:
+            scaled_width = int(button_surface.get_width() * self.button_hover_scale)
+            scaled_height = int(button_surface.get_height() * self.button_hover_scale)
+            return pygame.transform.scale(button_surface, (scaled_width, scaled_height))
+        return button_surface
+
+    def build_lower_panel(self):
+        return self.build_three_slice(self.lower_board_parts, 10, 11, 12, 430)
+
+    def draw_overlay(self):
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, self.overlay_alpha))
+        self.screen.blit(overlay, (0, 0))
+
+    def draw_title(self, center):
+        if self._title_surface is None:
+            return pygame.Rect(0, 0, 0, 0)
+
+        title_rect = self._title_surface.get_rect(center=center)
+        self.screen.blit(self._title_surface, title_rect)
+        return title_rect
+
+    def draw_lower_panel(self, center):
+        lower_rect = self._lower_surface.get_rect(center=center)
+        self.screen.blit(self._lower_surface, lower_rect)
+        self.draw_footer_buttons(lower_rect)
+        return lower_rect
+
+    def draw_footer_buttons(self, lower_rect):
+        mouse_pos = pygame.mouse.get_pos()
+
+        menu_w = self._menu_surface_normal.get_width()
+        retry_w = self._retry_surface_normal.get_width()
+        exit_w = self._exit_surface_normal.get_width()
+
+        btn_spacing = 40
+        total_btn_width = menu_w + retry_w + exit_w + btn_spacing * 2
+        btn_start_x = lower_rect.centerx - total_btn_width // 2
+        btn_y = lower_rect.centery
+
+        menu_cx = btn_start_x + menu_w // 2
+        retry_cx = btn_start_x + menu_w + btn_spacing + retry_w // 2
+        exit_cx = btn_start_x + menu_w + btn_spacing + retry_w + btn_spacing + exit_w // 2
+
+        menu_surface = self._menu_surface_hovered if self.menu_rect.collidepoint(mouse_pos) else self._menu_surface_normal
+        retry_surface = self._retry_surface_hovered if self.retry_rect.collidepoint(mouse_pos) else self._retry_surface_normal
+        exit_surface = self._exit_surface_hovered if self.exit_rect.collidepoint(mouse_pos) else self._exit_surface_normal
+
+        self.screen.blit(menu_surface, menu_surface.get_rect(center=(menu_cx, btn_y)))
+        self.screen.blit(retry_surface, retry_surface.get_rect(center=(retry_cx, btn_y)))
+        self.screen.blit(exit_surface, exit_surface.get_rect(center=(exit_cx, btn_y)))
+
+        self.menu_rect = self._menu_surface_normal.get_rect(center=(menu_cx, btn_y))
+        self.retry_rect = self._retry_surface_normal.get_rect(center=(retry_cx, btn_y))
+        self.exit_rect = self._exit_surface_normal.get_rect(center=(exit_cx, btn_y))
+
+    def handle_event(self, event):
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+            return None
+
+        if self.menu_rect.collidepoint(event.pos):
+            return "menu"
+
+        if self.retry_rect.collidepoint(event.pos):
+            return "retry"
+
+        if self.exit_rect.collidepoint(event.pos):
+            return "exit"
+
+        return None
 
 
 class GameHUD:
@@ -99,22 +436,47 @@ class StartScreen:
         self.small_text_letter_spacing = 3
         self.small_text_word_spacing = 12
         self.small_text_glyphs = load_small_text_glyphs(self.small_text_scale)
+        self.small_text_renderer = SpriteTextRenderer(
+            self.small_text_glyphs,
+            self.small_text_letter_spacing,
+            self.small_text_word_spacing,
+        )
         self.subtitle_text_scale = 4
         self.subtitle_text_letter_spacing = 4
         self.subtitle_text_word_spacing = 14
         self.subtitle_text_glyphs = load_small_text_glyphs(self.subtitle_text_scale)
+        self.subtitle_text_renderer = SpriteTextRenderer(
+            self.subtitle_text_glyphs,
+            self.subtitle_text_letter_spacing,
+            self.subtitle_text_word_spacing,
+        )
         self.instruction_title_text_scale = 6
         self.instruction_title_letter_spacing = 4
         self.instruction_title_word_spacing = 14
         self.instruction_title_glyphs = load_ui_small_text_glyphs(self.instruction_title_text_scale)
+        self.instruction_title_renderer = SpriteTextRenderer(
+            self.instruction_title_glyphs,
+            self.instruction_title_letter_spacing,
+            self.instruction_title_word_spacing,
+        )
         self.instruction_body_text_scale = 3
         self.instruction_body_letter_spacing = 3
         self.instruction_body_word_spacing = 12
         self.instruction_body_glyphs = load_ui_small_text_glyphs(self.instruction_body_text_scale)
+        self.instruction_body_renderer = SpriteTextRenderer(
+            self.instruction_body_glyphs,
+            self.instruction_body_letter_spacing,
+            self.instruction_body_word_spacing,
+        )
         self.instruction_button_text_scale = 4
         self.instruction_button_letter_spacing = 4
         self.instruction_button_word_spacing = 14
         self.instruction_button_glyphs = load_ui_small_text_glyphs(self.instruction_button_text_scale)
+        self.instruction_button_renderer = SpriteTextRenderer(
+            self.instruction_button_glyphs,
+            self.instruction_button_letter_spacing,
+            self.instruction_button_word_spacing,
+        )
         self.menu_board_scale = 2
         self.yellow_board_parts = load_yellow_board_parts(self.menu_board_scale)
         self.paper_box_scale_x = 1.85
@@ -254,7 +616,6 @@ class StartScreen:
         self.prev_rect = pygame.Rect(0, 0, 0, 0)
         self.next_rect = pygame.Rect(0, 0, 0, 0)
         try:
-            from classes.loader import load_frames
             _potion_frames = load_frames("asset/graphics/items/potion")
             _pw = _potion_frames[0].get_width()
             _ph = _potion_frames[0].get_height()
@@ -271,7 +632,6 @@ class StartScreen:
 
         def _load_scaled(folder, target_h):
             try:
-                from classes.loader import load_frames
                 frames = load_frames(folder)
                 w0, h0 = frames[0].get_size()
                 scale = target_h / max(h0, 1)
@@ -294,7 +654,6 @@ class StartScreen:
         self.enemy_anim_speed = 0.12
 
         try:
-            from classes.loader import load_frames
             _body = load_image("asset/graphics/level/water/body.png")
             _top_frames = load_frames("asset/graphics/level/water/top")
             self.water_body   = _body
@@ -394,109 +753,19 @@ class StartScreen:
         return padded_surface
 
     def render_small_text(self, label):
-        return self.render_sprite_text(
-            label,
-            self.small_text_glyphs,
-            self.small_text_letter_spacing,
-            self.small_text_word_spacing,
-        )
+        return self.small_text_renderer.render(label)
 
     def render_subtitle_text(self, label):
-        return self.render_sprite_text(
-            label,
-            self.subtitle_text_glyphs,
-            self.subtitle_text_letter_spacing,
-            self.subtitle_text_word_spacing,
-        )
-
-    def normalize_instruction_asset_label(self, label, glyph_map):
-        normalized = label.upper()
-        replacements = {
-            "&": " AND ",
-            "+": " PLUS ",
-            "=": " EQUALS ",
-            ".": " ",
-            ",": " ",
-            "(": " ",
-            ")": " ",
-            "-": " ",
-            "/": " ",
-            "!": " ",
-            "?": " ",
-            "'": "",
-        }
-        for old, new in replacements.items():
-            normalized = normalized.replace(old, new)
-
-        cleaned = "".join(char if char == " " or char in glyph_map else " " for char in normalized)
-        return " ".join(cleaned.split())
-
-    def render_instruction_asset_text(self, label, glyph_map, letter_spacing, word_spacing):
-        normalized = self.normalize_instruction_asset_label(label, glyph_map)
-        return self.render_sprite_text(normalized, glyph_map, letter_spacing, word_spacing)
+        return self.subtitle_text_renderer.render(label)
 
     def render_instruction_title_text(self, label):
-        return self.render_instruction_asset_text(
-            label,
-            self.instruction_title_glyphs,
-            self.instruction_title_letter_spacing,
-            self.instruction_title_word_spacing,
-        )
+        return self.instruction_title_renderer.render_normalized(label)
 
     def render_instruction_body_text(self, label):
-        return self.render_instruction_asset_text(
-            label,
-            self.instruction_body_glyphs,
-            self.instruction_body_letter_spacing,
-            self.instruction_body_word_spacing,
-        )
+        return self.instruction_body_renderer.render_normalized(label)
 
     def render_instruction_button_text(self, label):
-        return self.render_instruction_asset_text(
-            label,
-            self.instruction_button_glyphs,
-            self.instruction_button_letter_spacing,
-            self.instruction_button_word_spacing,
-        )
-
-    def render_sprite_text(self, label, glyph_map, letter_spacing, word_spacing):
-        total_width = 0
-        max_height = 0
-
-        for index, char in enumerate(label):
-            if char == " ":
-                total_width += word_spacing
-                continue
-
-            glyph = glyph_map.get(char)
-            if glyph is None:
-                return None
-
-            total_width += glyph.get_width()
-            max_height = max(max_height, glyph.get_height())
-
-            if index < len(label) - 1 and label[index + 1] != " ":
-                total_width += letter_spacing
-
-        if total_width <= 0 or max_height <= 0:
-            return None
-
-        surface = pygame.Surface((total_width, max_height), pygame.SRCALPHA)
-        draw_x = 0
-
-        for index, char in enumerate(label):
-            if char == " ":
-                draw_x += word_spacing
-                continue
-
-            glyph = glyph_map[char]
-            surface.blit(glyph, (draw_x, 0))
-            draw_x += glyph.get_width()
-
-            if index < len(label) - 1 and label[index + 1] != " ":
-                draw_x += letter_spacing
-
-        return surface
+        return self.instruction_button_renderer.render_normalized(label)
 
     def build_menu_board(self, label):
         text_surface = self.render_small_text(label)
@@ -516,24 +785,8 @@ class StartScreen:
         if text_surface is None or len(box_parts) < 3:
             return None
 
-        left_part = box_parts[10]
-        middle_part = box_parts[11]
-        right_part = box_parts[12]
         inner_width = text_surface.get_width() + padding_x * 2
-        middle_count = max(1, (inner_width + middle_part.get_width() - 1) // middle_part.get_width())
-        board_width = left_part.get_width() + middle_count * middle_part.get_width() + right_part.get_width()
-        board_height = max(left_part.get_height(), middle_part.get_height(), right_part.get_height())
-        board_surface = pygame.Surface((board_width, board_height), pygame.SRCALPHA)
-
-        board_surface.blit(left_part, (0, 0))
-        draw_x = left_part.get_width()
-
-        for _ in range(middle_count):
-            board_surface.blit(middle_part, (draw_x, 0))
-            draw_x += middle_part.get_width()
-
-        board_surface.blit(right_part, (draw_x, 0))
-
+        board_surface = build_three_slice_surface(box_parts, 10, 11, 12, inner_width)
         text_rect = text_surface.get_rect(center=(board_surface.get_width() // 2, board_surface.get_height() // 2))
         board_surface.blit(text_surface, text_rect)
         return board_surface
@@ -1119,230 +1372,12 @@ class StartScreen:
         return None
 
 
-class LoseScreen:
+class LoseScreen(ResultScreenBase):
     def __init__(self, screen):
-        self.screen = screen
-        self.width = SETTINGS["WIDTH"]
-        self.height = SETTINGS["HEIGHT"]
-        self.overlay_alpha = 120
-
-        self.text_scale = 5
-        self.text_letter_spacing = 4
-        self.text_word_spacing = 14
-        self.text_glyphs = load_ui_small_text_glyphs(self.text_scale)
-
-        self.board_scale = 4
-        self.paper_scale = 4
-        self.banner_scale = 5
-        self.button_scale = 4
-
-        self.upper_board_parts = load_scaled_parts(
-            "asset/graphics/ui/Yellow Board",
-            (1, 2, 3, 7, 8, 9),
-            scale_x=self.board_scale,
-            scale_y=self.board_scale,
-        )
-        self.lower_board_parts = load_scaled_parts(
-            "asset/graphics/ui/Yellow Board",
-            (10, 11, 12),
-            scale_x=self.board_scale,
-            scale_y=self.board_scale,
-        )
-        self.paper_parts = load_scaled_parts(
-            "asset/graphics/ui/Orange Paper",
-            (1, 2, 3, 7, 8, 9),
-            scale_x=self.paper_scale,
-            scale_y=self.paper_scale,
-        )
-        self.button_parts = load_scaled_parts(
-            "asset/graphics/ui/Yellow Button",
-            (2, 3, 4),
-            scale_x=self.button_scale,
-            scale_y=self.button_scale,
-        )
-        self.banner_parts = load_scaled_parts(
-            "asset/graphics/ui/Small Banner",
-            (1, 2, 13),
-            scale_x=self.banner_scale,
-            scale_y=self.banner_scale,
-        )
-
-        self.retry_rect = pygame.Rect(0, 0, 0, 0)
-        self.menu_rect = pygame.Rect(0, 0, 0, 0)
-        self.exit_rect = pygame.Rect(0, 0, 0, 0)
-
-        self._title_surface = self.build_banner("GAME OVER", 1, 2, self.banner_parts[13].get_width(), text_padding=0)
-        self._lower_surface = self.build_lower_panel()
-        self._retry_surface_normal = self._build_button_surface("RETRY", hovered=False)
-        self._retry_surface_hovered = self._build_button_surface("RETRY", hovered=True)
-        self._menu_surface_normal = self._build_button_surface("MENU", hovered=False)
-        self._menu_surface_hovered = self._build_button_surface("MENU", hovered=True)
-        self._exit_surface_normal = self._build_button_surface("EXIT", hovered=False)
-        self._exit_surface_hovered = self._build_button_surface("EXIT", hovered=True)
-
-    def render_small_text(self, label):
-        total_width = 0
-        max_height = 0
-
-        for index, char in enumerate(label):
-            if char == " ":
-                total_width += self.text_word_spacing
-                continue
-
-            glyph = self.text_glyphs.get(char)
-            if glyph is None:
-                return None
-
-            total_width += glyph.get_width()
-            max_height = max(max_height, glyph.get_height())
-
-            if index < len(label) - 1 and label[index + 1] != " ":
-                total_width += self.text_letter_spacing
-
-        if total_width <= 0 or max_height <= 0:
-            return None
-
-        surface = pygame.Surface((total_width, max_height), pygame.SRCALPHA)
-        draw_x = 0
-
-        for index, char in enumerate(label):
-            if char == " ":
-                draw_x += self.text_word_spacing
-                continue
-
-            glyph = self.text_glyphs[char]
-            surface.blit(glyph, (draw_x, 0))
-            draw_x += glyph.get_width()
-
-            if index < len(label) - 1 and label[index + 1] != " ":
-                draw_x += self.text_letter_spacing
-
-        return surface
-
-    def build_three_slice(self, parts, left_idx, middle_idx, right_idx, inner_width):
-        left_part = parts[left_idx]
-        middle_part = parts[middle_idx]
-        right_part = parts[right_idx]
-        if inner_width <= 0:
-            middle_count = 0
-        else:
-            middle_count = max(1, (inner_width + middle_part.get_width() - 1) // middle_part.get_width())
-        width = left_part.get_width() + middle_count * middle_part.get_width() + right_part.get_width()
-        height = max(left_part.get_height(), middle_part.get_height(), right_part.get_height())
-        surface = pygame.Surface((width, height), pygame.SRCALPHA)
-
-        draw_x = 0
-        surface.blit(left_part, (draw_x, 0))
-        draw_x += left_part.get_width()
-
-        for _ in range(middle_count):
-            surface.blit(middle_part, (draw_x, 0))
-            draw_x += middle_part.get_width()
-
-        surface.blit(right_part, (draw_x, 0))
-        return surface
-
-    def build_six_slice(self, parts, size):
-        width, height = size
-        top_left     = parts[1]
-        top_mid      = parts[2]
-        top_right    = parts[3]
-        bot_left     = parts[7]
-        bot_mid      = parts[8]
-        bot_right    = parts[9]
-
-        min_w = top_left.get_width() + top_right.get_width() + top_mid.get_width()
-        width  = max(width, min_w)
-        min_h  = top_left.get_height() + bot_left.get_height()
-        height = max(height, min_h)
-
-        surface = pygame.Surface((width, height), pygame.SRCALPHA)
-
-        inner_left  = top_left.get_width()
-        inner_right = width - top_right.get_width()
-        inner_top   = top_left.get_height()
-        inner_bot   = height - bot_left.get_height()
-
-        inner_w  = inner_right - inner_left
-        inner_h  = inner_bot - inner_top
-        if inner_w > 0 and inner_h > 0:
-            strip = pygame.transform.scale(top_mid, (inner_w, top_mid.get_height()))
-            fill  = pygame.transform.scale(strip, (inner_w, inner_h))
-            surface.blit(fill, (inner_left, inner_top))
-
-        if inner_h > 0:
-            left_strip = pygame.transform.scale(
-                top_left.subsurface(pygame.Rect(0, top_left.get_height() - 1, top_left.get_width(), 1)),
-                (top_left.get_width(), inner_h),
-            )
-            right_strip = pygame.transform.scale(
-                top_right.subsurface(pygame.Rect(0, top_right.get_height() - 1, top_right.get_width(), 1)),
-                (top_right.get_width(), inner_h),
-            )
-            surface.blit(left_strip,  (0,                             inner_top))
-            surface.blit(right_strip, (width - top_right.get_width(), inner_top))
-
-        draw_x = inner_left
-        while draw_x < inner_right:
-            seg_w = min(top_mid.get_width(), inner_right - draw_x)
-            if seg_w == top_mid.get_width():
-                surface.blit(top_mid, (draw_x, 0))
-                surface.blit(bot_mid, (draw_x, height - bot_mid.get_height()))
-            else:
-                surface.blit(
-                    pygame.transform.scale(top_mid, (seg_w, top_mid.get_height())),
-                    (draw_x, 0),
-                )
-                surface.blit(
-                    pygame.transform.scale(bot_mid, (seg_w, bot_mid.get_height())),
-                    (draw_x, height - bot_mid.get_height()),
-                )
-            draw_x += seg_w
-
-        surface.blit(top_left,  (0,                             0))
-        surface.blit(top_right, (width - top_right.get_width(), 0))
-        surface.blit(bot_left,  (0,                             height - bot_left.get_height()))
-        surface.blit(bot_right, (width - bot_right.get_width(), height - bot_right.get_height()))
-        return surface
-
-    def build_banner(self, label, left_idx, right_idx, min_inner_width, text_padding=36):
-        text_surface = self.render_small_text(label)
-        if text_surface is None:
-            return None
-
-        middle_idx = 13
-        if text_padding == 0 and min_inner_width == 0:
-            inner_width = 0
-        else:
-            inner_width = max(min_inner_width, text_surface.get_width() + text_padding)
-        inner_width = max(0, inner_width - self.banner_parts[middle_idx].get_width())
-        banner_surface = self.build_three_slice(self.banner_parts, left_idx, middle_idx, right_idx, inner_width)
-        text_rect = text_surface.get_rect(center=(banner_surface.get_width() // 2, banner_surface.get_height() // 2 - 4))
-        banner_surface.blit(text_surface, text_rect)
-        return banner_surface
-
-    def _build_button_surface(self, label, hovered):
-        text_surface = self.render_small_text(label)
-        left_part = self.button_parts[2]
-        middle_part = self.button_parts[3]
-        right_part = self.button_parts[4]
-        total_width = left_part.get_width() + middle_part.get_width() + right_part.get_width()
-        height = max(left_part.get_height(), middle_part.get_height(), right_part.get_height())
-        button_surface = pygame.Surface((total_width, height), pygame.SRCALPHA)
-        button_surface.blit(left_part, (0, 0))
-        button_surface.blit(middle_part, (left_part.get_width(), 0))
-        button_surface.blit(right_part, (left_part.get_width() + middle_part.get_width(), 0))
-        text_rect = text_surface.get_rect(center=(button_surface.get_width() // 2, button_surface.get_height() // 2 - 4))
-        button_surface.blit(text_surface, text_rect)
-
-        if hovered:
-            scaled_width = int(button_surface.get_width() * 1.08)
-            scaled_height = int(button_surface.get_height() * 1.08)
-            return pygame.transform.scale(button_surface, (scaled_width, scaled_height))
-        return button_surface
+        super().__init__(screen, "GAME OVER", title_padding=0)
 
     def build_upper_panel(self, score):
-        middle_w = self.upper_board_parts[2].get_width()   
+        middle_w = self.upper_board_parts[2].get_width()
         board_surface = self.build_six_slice(
             self.upper_board_parts,
             (540 - middle_w, 250),
@@ -1359,116 +1394,21 @@ class LoseScreen:
             board_surface.blit(score_line, score_line_rect)
         return board_surface
 
-    def build_lower_panel(self):
-        return self.build_three_slice(self.lower_board_parts, 10, 11, 12, 430)
-
     def draw(self, score):
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, self.overlay_alpha))
-        self.screen.blit(overlay, (0, 0))
-
+        self.draw_overlay()
         upper_surface = self.build_upper_panel(score)
 
-        title_rect = self._title_surface.get_rect(center=(self.width // 2, 145))
+        self.draw_title((self.width // 2, 145))
         upper_rect = upper_surface.get_rect(center=(self.width // 2, 340))
-        lower_rect = self._lower_surface.get_rect(center=(self.width // 2, 540))
-
-        self.screen.blit(self._title_surface, title_rect)
         self.screen.blit(upper_surface, upper_rect)
-        self.screen.blit(self._lower_surface, lower_rect)
+        self.draw_lower_panel((self.width // 2, 540))
 
-        mouse_pos = pygame.mouse.get_pos()
 
-        menu_w = self._menu_surface_normal.get_width()
-        retry_w = self._retry_surface_normal.get_width()
-        exit_w = self._exit_surface_normal.get_width()
-
-        btn_spacing = 40
-        total_btn_width = menu_w + retry_w + exit_w + btn_spacing * 2
-        btn_start_x = lower_rect.centerx - total_btn_width // 2
-        btn_y = lower_rect.centery
-
-        menu_cx = btn_start_x + menu_w // 2
-        retry_cx = btn_start_x + menu_w + btn_spacing + retry_w // 2
-        exit_cx = btn_start_x + menu_w + btn_spacing + retry_w + btn_spacing + exit_w // 2
-
-        menu_surface = self._menu_surface_hovered if self.menu_rect.collidepoint(mouse_pos) else self._menu_surface_normal
-        retry_surface = self._retry_surface_hovered if self.retry_rect.collidepoint(mouse_pos) else self._retry_surface_normal
-        exit_surface = self._exit_surface_hovered if self.exit_rect.collidepoint(mouse_pos) else self._exit_surface_normal
-
-        self.screen.blit(menu_surface, menu_surface.get_rect(center=(menu_cx, btn_y)))
-        self.screen.blit(retry_surface, retry_surface.get_rect(center=(retry_cx, btn_y)))
-        self.screen.blit(exit_surface, exit_surface.get_rect(center=(exit_cx, btn_y)))
-
-        self.menu_rect = self._menu_surface_normal.get_rect(center=(menu_cx, btn_y))
-        self.retry_rect = self._retry_surface_normal.get_rect(center=(retry_cx, btn_y))
-        self.exit_rect = self._exit_surface_normal.get_rect(center=(exit_cx, btn_y))
-
-    def handle_event(self, event):
-        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
-            return None
-
-        if self.menu_rect.collidepoint(event.pos):
-            return "menu"
-
-        if self.retry_rect.collidepoint(event.pos):
-            return "retry"
-
-        if self.exit_rect.collidepoint(event.pos):
-            return "exit"
-
-        return None
-class WinScreen:
+class WinScreen(ResultScreenBase):
     def __init__(self, screen):
-        self.screen = screen
-        self.width  = SETTINGS["WIDTH"]
-        self.height = SETTINGS["HEIGHT"]
-        self.overlay_alpha = 120
+        super().__init__(screen, "YOU WIN!", title_padding=36)
 
-        self.text_scale = 5
-        self.text_letter_spacing = 4
-        self.text_word_spacing = 14
-        self.text_glyphs = load_ui_small_text_glyphs(self.text_scale)
-
-        self.board_scale  = 4
-        self.paper_scale  = 4
-        self.banner_scale = 5
-        self.button_scale = 4
-
-        self.upper_board_parts = load_scaled_parts(
-            "asset/graphics/ui/Yellow Board",
-            (1, 2, 3, 7, 8, 9),
-            scale_x=self.board_scale,
-            scale_y=self.board_scale,
-        )
-        self.lower_board_parts = load_scaled_parts(
-            "asset/graphics/ui/Yellow Board",
-            (10, 11, 12),
-            scale_x=self.board_scale,
-            scale_y=self.board_scale,
-        )
-        self.paper_parts = load_scaled_parts(
-            "asset/graphics/ui/Orange Paper",
-            (1, 2, 3, 7, 8, 9),
-            scale_x=self.paper_scale,
-            scale_y=self.paper_scale,
-        )
-        self.button_parts = load_scaled_parts(
-            "asset/graphics/ui/Yellow Button",
-            (2, 3, 4),
-            scale_x=self.button_scale,
-            scale_y=self.button_scale,
-        )
-        self.banner_parts = load_scaled_parts(
-            "asset/graphics/ui/Small Banner",
-            (1, 2, 13),
-            scale_x=self.banner_scale,
-            scale_y=self.banner_scale,
-        )
-
-        # Load the Vietnam flag sprite (static image, already in assets)
         try:
-            from classes.loader import load_image
             _flag = load_image("asset/graphics/objects/flag.png")
             _fw, _fh = _flag.get_size()
             _target_h = 120
@@ -1480,9 +1420,7 @@ class WinScreen:
         except Exception:
             self.flag_image = None
 
-        # Load animated flag frames from level folder
         try:
-            from classes.loader import load_frames
             _fframes = load_frames("asset/graphics/level/flag")
             _fw0, _fh0 = _fframes[0].get_size()
             _target_h = 120
@@ -1493,145 +1431,19 @@ class WinScreen:
             ]
         except Exception:
             self.flag_frames = []
-        self.flag_fi    = 0.0
+        self.flag_fi = 0.0
         self.flag_speed = 0.12
 
-        self.retry_rect = pygame.Rect(0, 0, 0, 0)
-        self.menu_rect  = pygame.Rect(0, 0, 0, 0)
-        self.exit_rect  = pygame.Rect(0, 0, 0, 0)
+    def build_upper_panel(self, score, _time_left):
+        board = self.build_six_slice(self.upper_board_parts, (540, 250))
+        paper = self.build_six_slice(self.paper_parts, (390, 150))
+        paper_rect = paper.get_rect(center=(board.get_width() // 2, board.get_height() // 2))
+        board.blit(paper, paper_rect)
 
-        self._title_surface = self._build_banner("YOU WIN")
-        self._lower_surface = self._build_lower_panel()
-        self._retry_surface_normal  = self._build_button("RETRY",  hovered=False)
-        self._retry_surface_hovered = self._build_button("RETRY",  hovered=True)
-        self._menu_surface_normal   = self._build_button("MENU",   hovered=False)
-        self._menu_surface_hovered  = self._build_button("MENU",   hovered=True)
-        self._exit_surface_normal   = self._build_button("EXIT",   hovered=False)
-        self._exit_surface_hovered  = self._build_button("EXIT",   hovered=True)
-
-    # ------------------------------------------------------------------ helpers
-
-    def _render_text(self, label):
-        total_width = 0
-        max_height  = 0
-        for i, ch in enumerate(label):
-            if ch == " ":
-                total_width += self.text_word_spacing
-                continue
-            g = self.text_glyphs.get(ch)
-            if g is None:
-                return None
-            total_width += g.get_width()
-            max_height = max(max_height, g.get_height())
-            if i < len(label) - 1 and label[i + 1] != " ":
-                total_width += self.text_letter_spacing
-        if total_width <= 0 or max_height <= 0:
-            return None
-        surf = pygame.Surface((total_width, max_height), pygame.SRCALPHA)
-        x = 0
-        for i, ch in enumerate(label):
-            if ch == " ":
-                x += self.text_word_spacing
-                continue
-            g = self.text_glyphs[ch]
-            surf.blit(g, (x, 0))
-            x += g.get_width()
-            if i < len(label) - 1 and label[i + 1] != " ":
-                x += self.text_letter_spacing
-        return surf
-
-    def _three_slice(self, parts, li, mi, ri, inner_w):
-        L, M, R = parts[li], parts[mi], parts[ri]
-        mc = max(1, (inner_w + M.get_width() - 1) // M.get_width()) if inner_w > 0 else 0
-        w  = L.get_width() + mc * M.get_width() + R.get_width()
-        h  = max(L.get_height(), M.get_height(), R.get_height())
-        s  = pygame.Surface((w, h), pygame.SRCALPHA)
-        s.blit(L, (0, 0))
-        dx = L.get_width()
-        for _ in range(mc):
-            s.blit(M, (dx, 0))
-            dx += M.get_width()
-        s.blit(R, (dx, 0))
-        return s
-
-    def _six_slice(self, parts, size):
-        w, h   = size
-        TL, TM, TR = parts[1], parts[2], parts[3]
-        BL, BM, BR = parts[7], parts[8], parts[9]
-        w = max(w, TL.get_width() + TR.get_width() + TM.get_width())
-        h = max(h, TL.get_height() + BL.get_height())
-        s  = pygame.Surface((w, h), pygame.SRCALPHA)
-        il, ir = TL.get_width(), w - TR.get_width()
-        it, ib = TL.get_height(), h - BL.get_height()
-        iw, ih = ir - il, ib - it
-        if iw > 0 and ih > 0:
-            fill = pygame.transform.scale(TM, (iw, ih))
-            s.blit(fill, (il, it))
-        if ih > 0:
-            s.blit(pygame.transform.scale(
-                TL.subsurface(pygame.Rect(0, TL.get_height()-1, TL.get_width(), 1)),
-                (TL.get_width(), ih)), (0, it))
-            s.blit(pygame.transform.scale(
-                TR.subsurface(pygame.Rect(0, TR.get_height()-1, TR.get_width(), 1)),
-                (TR.get_width(), ih)), (w-TR.get_width(), it))
-        dx = il
-        while dx < ir:
-            sw = min(TM.get_width(), ir - dx)
-            seg_t = TM if sw == TM.get_width() else pygame.transform.scale(TM, (sw, TM.get_height()))
-            seg_b = BM if sw == BM.get_width() else pygame.transform.scale(BM, (sw, BM.get_height()))
-            s.blit(seg_t, (dx, 0))
-            s.blit(seg_b, (dx, h - BM.get_height()))
-            dx += sw
-        s.blit(TL, (0, 0));        s.blit(TR, (w-TR.get_width(), 0))
-        s.blit(BL, (0, h-BL.get_height())); s.blit(BR, (w-BR.get_width(), h-BR.get_height()))
-        return s
-
-    def _build_banner(self, label):
-        text = self._render_text(label)
-        if text is None:
-            return None
-        mid_idx = 13
-        inner_w = max(self.banner_parts[mid_idx].get_width(), text.get_width() + 36)
-        inner_w = max(0, inner_w - self.banner_parts[mid_idx].get_width())
-        s = self._three_slice(self.banner_parts, 1, mid_idx, 2, inner_w)
-        tr = text.get_rect(center=(s.get_width()//2, s.get_height()//2 - 4))
-        s.blit(text, tr)
-        return s
-
-    def _build_button(self, label, hovered):
-        text = self._render_text(label)
-        L, M, R = self.button_parts[2], self.button_parts[3], self.button_parts[4]
-        w = L.get_width() + M.get_width() + R.get_width()
-        h = max(L.get_height(), M.get_height(), R.get_height())
-        s = pygame.Surface((w, h), pygame.SRCALPHA)
-        s.blit(L, (0, 0))
-        s.blit(M, (L.get_width(), 0))
-        s.blit(R, (L.get_width() + M.get_width(), 0))
-        if text:
-            tr = text.get_rect(center=(s.get_width()//2, s.get_height()//2 - 4))
-            s.blit(text, tr)
-        if hovered:
-            return pygame.transform.scale(s, (round(s.get_width()*1.08), round(s.get_height()*1.08)))
-        return s
-
-    def _build_lower_panel(self):
-        return self._three_slice(self.lower_board_parts, 10, 11, 12, 430)
-
-    def _build_upper_panel(self, score, time_left):
-        board = self._six_slice(self.upper_board_parts, (540, 250))
-        paper = self._six_slice(self.paper_parts,       (390, 150))
-        pr = paper.get_rect(center=(board.get_width()//2, board.get_height()//2))
-        board.blit(paper, pr)
-
-        score_surf = self._render_text("SCORE:" + str(score))
-        time_surf  = self._render_text("TIME:" + str(time_left) + "S")
+        score_surf = self.render_small_text("SCORE:" + str(score))
         if score_surf:
-            board.blit(score_surf, score_surf.get_rect(center=(pr.centerx, pr.centery - 18)))
-        if time_surf:
-            board.blit(time_surf,  time_surf.get_rect(center=(pr.centerx, pr.centery + 18)))
+            board.blit(score_surf, score_surf.get_rect(center=paper_rect.center))
         return board
-
-    # ------------------------------------------------------------------ public
 
     def update(self, dt):
         if self.flag_frames:
@@ -1652,55 +1464,11 @@ class WinScreen:
         if flag_draw is not None:
             self.screen.blit(flag_draw, flag_draw.get_rect(center=(self.width // 2, 110)))
 
-        # "YOU WIN" banner just below flag
-        if self._title_surface:
-            banner_y = 200 if flag_draw is None else 195
-            self.screen.blit(
-                self._title_surface,
-                self._title_surface.get_rect(center=(self.width // 2, banner_y)),
-            )
+        title_y = 200 if flag_draw is None else 195
+        self.draw_title((self.width // 2, title_y))
 
-        # Score + time panel in the middle
-        upper_surface = self._build_upper_panel(score, time_left)
+        upper_surface = self.build_upper_panel(score, time_left)
         upper_rect = upper_surface.get_rect(center=(self.width // 2, 360))
         self.screen.blit(upper_surface, upper_rect)
 
-        # Button bar at the bottom
-        lower_rect = self._lower_surface.get_rect(center=(self.width // 2, 530))
-        self.screen.blit(self._lower_surface, lower_rect)
-
-        mouse_pos = pygame.mouse.get_pos()
-        mw  = self._menu_surface_normal.get_width()
-        rw  = self._retry_surface_normal.get_width()
-        ew  = self._exit_surface_normal.get_width()
-        gap = 40
-        total = mw + rw + ew + gap * 2
-        bx = lower_rect.centerx - total // 2
-        by = lower_rect.centery
-
-        menu_cx  = bx + mw // 2
-        retry_cx = bx + mw + gap + rw // 2
-        exit_cx  = bx + mw + gap + rw + gap + ew // 2
-
-        ms = self._menu_surface_hovered  if self.menu_rect.collidepoint(mouse_pos) else self._menu_surface_normal
-        rs = self._retry_surface_hovered if self.retry_rect.collidepoint(mouse_pos) else self._retry_surface_normal
-        es = self._exit_surface_hovered  if self.exit_rect.collidepoint(mouse_pos) else self._exit_surface_normal
-
-        self.screen.blit(ms, ms.get_rect(center=(menu_cx,  by)))
-        self.screen.blit(rs, rs.get_rect(center=(retry_cx, by)))
-        self.screen.blit(es, es.get_rect(center=(exit_cx,  by)))
-
-        self.menu_rect  = self._menu_surface_normal.get_rect(center=(menu_cx,  by))
-        self.retry_rect = self._retry_surface_normal.get_rect(center=(retry_cx, by))
-        self.exit_rect  = self._exit_surface_normal.get_rect(center=(exit_cx,  by))
-
-    def handle_event(self, event):
-        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
-            return None
-        if self.menu_rect.collidepoint(event.pos):
-            return "menu"
-        if self.retry_rect.collidepoint(event.pos):
-            return "retry"
-        if self.exit_rect.collidepoint(event.pos):
-            return "exit"
-        return None
+        self.draw_lower_panel((self.width // 2, 530))

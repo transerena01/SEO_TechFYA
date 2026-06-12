@@ -5,6 +5,7 @@ from settings import SETTINGS
 from classes.animated_sprite import (
     AnimatedSprite,
     Collectible,
+    FloatingPathSprite,
     OrbitalSprite,
     PathSprite,
     WaterArea,
@@ -25,11 +26,11 @@ START_SCREEN_MUSIC_PATH = "asset/SEOmusic/Intro_hello_Vietnam.mp3"
 MAIN_GAME_MUSIC_PATH = "asset/SEOmusic/Pokémon Ruby and Sapphire - Oceanic Museum (Remix).mp3"
 
 
-def play_background_music(path, volume):
+def play_background_music(path, volume=0.8):
     load_music(path, volume=volume, loops=-1)
 
 
-play_background_music(START_SCREEN_MUSIC_PATH, volume=0.6)
+play_background_music(START_SCREEN_MUSIC_PATH, volume=0.8)
 
 coin_sound = load_sound(
     "asset/SEOmusic/ES_User Interface, Alert, Success, Reward, Bright, Happy Twinkle, Short - Epidemic Sound.mp3",
@@ -247,6 +248,35 @@ world_rect = pygame.Rect(0, 0, game_map.pixel_width, game_map.pixel_height)
 moving_platform_system = MovingPlatformSystem(terrain_rects)
 
 
+def find_water_area_for_rect(target_rect):
+    best_water_area = None
+    best_overlap = 0
+    best_vertical_gap = None
+
+    for water_area in water_areas:
+        overlap_width = min(target_rect.right, water_area.rect.right) - max(
+            target_rect.left,
+            water_area.rect.left,
+        )
+        if overlap_width <= 0:
+            continue
+
+        vertical_gap = abs(target_rect.bottom - water_area.rect.top)
+        if (
+            best_water_area is None
+            or overlap_width > best_overlap
+            or (
+                overlap_width == best_overlap
+                and (best_vertical_gap is None or vertical_gap < best_vertical_gap)
+            )
+        ):
+            best_water_area = water_area
+            best_overlap = overlap_width
+            best_vertical_gap = vertical_gap
+
+    return best_water_area
+
+
 def spawn_entities():
     global teeth, animated_objects, collectibles, shells
     global moving_objects, moving_hazard_objects, water_areas, water_rects
@@ -305,6 +335,20 @@ def spawn_entities():
         "crate": "asset/graphics/objects/crate.png",
     }
     pickup_object_names = {"gold", "silver", "diamond", "potion", "skull"}
+    collectible_hover_profiles = {
+        "diamond": {
+            "hover_amplitude": 12,
+            "hover_speed": 2.8,
+        },
+        "potion": {
+            "hover_amplitude": 10,
+            "hover_speed": 2.4,
+        },
+        "skull": {
+            "hover_amplitude": 16,
+            "hover_speed": 2.2,
+        },
+    }
     pickup_coin_values = SETTINGS["COLLECTIBLE_COIN_VALUES"]
     pickup_health_values = SETTINGS["COLLECTIBLE_HEALTH_VALUES"]
     object_layer_animated_names = {
@@ -356,6 +400,7 @@ def spawn_entities():
                     size=object_size,
                     anchor="midbottom",
                     animation_speed=8,
+                    **collectible_hover_profiles.get(object_name, {}),
                 )
             )
             continue
@@ -409,15 +454,27 @@ def spawn_entities():
             max(1, round(water_object["width"])),
             max(1, round(water_object["height"])),
         )
-        water_rects.append(water_rect)
-        water_areas.append(
-            WaterArea.from_assets(
-                water_rect,
-                top_folder="asset/graphics/level/water/top",
-                body_path="asset/graphics/level/water/body.png",
-                animation_speed=6,
-            )
+        water_properties = water_object.get("properties", {})
+        water_area = WaterArea.from_assets(
+            water_rect,
+            top_folder="asset/graphics/level/water/top",
+            body_path="asset/graphics/level/water/body.png",
+            animation_speed=6,
+            rise_speed=water_properties.get(
+                "rise_speed",
+                SETTINGS.get("WATER_RISE_SPEED", 0),
+            ),
+            rise_delay=water_properties.get(
+                "rise_delay",
+                SETTINGS.get("WATER_RISE_DELAY", 0),
+            ),
+            rise_target_y=water_properties.get(
+                "rise_target_y",
+                SETTINGS.get("WATER_RISE_TARGET_Y", 0),
+            ),
         )
+        water_areas.append(water_area)
+        water_rects.append(water_area.rect)
 
     moving_object_definitions = {
         "boat": {
@@ -490,13 +547,30 @@ def spawn_entities():
                 size=size, flip_x=flip_x,
             )]
         sprite_size = frames[0].get_size()
-        start_position, end_position = get_path_endpoints(map_object, sprite_size)
-        moving_sprite = PathSprite(
-            start_position, end_position, frames,
-            speed=object_properties.get("speed", 0),
-            animation_speed=animation_speed,
-            anchor="center",
+        object_rect = pygame.Rect(
+            round(map_object["x"]),
+            round(map_object["y"]),
+            max(1, round(map_object["width"])),
+            max(1, round(map_object["height"])),
         )
+        start_position, end_position = get_path_endpoints(map_object, sprite_size)
+        if object_name == "boat":
+            moving_sprite = FloatingPathSprite(
+                start_position,
+                end_position,
+                frames,
+                speed=object_properties.get("speed", 0),
+                animation_speed=animation_speed,
+                anchor="center",
+                water_area=find_water_area_for_rect(object_rect),
+            )
+        else:
+            moving_sprite = PathSprite(
+                start_position, end_position, frames,
+                speed=object_properties.get("speed", 0),
+                animation_speed=animation_speed,
+                anchor="center",
+            )
         moving_objects.append(moving_sprite)
         moving_platform_system.register(
             moving_sprite,
@@ -633,6 +707,9 @@ while running:
         standing_platform = moving_platform_system.get_supporting_platform(player)
         previous_moving_rects = moving_platform_system.snapshot_rects()
 
+        for water_area in water_areas:
+            water_area.update(dt)
+
         for moving_object in moving_objects:
             moving_object.update(dt)
 
@@ -672,9 +749,6 @@ while running:
             shell.update(dt, player, terrain_rects, world_rect)
             if player.points < old_points:
                 enemy_hit_sound.play()
-
-        for water_area in water_areas:
-            water_area.update(dt)
 
         for animated_object in animated_objects:
             animated_object.update(dt)

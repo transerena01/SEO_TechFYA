@@ -11,7 +11,7 @@ class Player:
         self.speed = 5
         self.velocity_y = 0
         self.gravity = 0.5
-        self.jump_force = -30
+        self.jump_force = -15
         self.on_ground = False
         self.horizontal_input = 0
         self.facing_right = True

@@ -527,6 +527,11 @@ water_hit_cooldown_ms = 800
 water_last_hit_time = -water_hit_cooldown_ms
 water_damage = 1
 
+# Rising water config
+WATER_RISE_SPEED = 8     # pixels per second — raise to make it scarier
+WATER_RISE_MAX   = 400   # total pixels the water can ever rise
+water_risen_total = 0.0  # float accumulator; reset on retry
+
 # --- Damage flash effect ---
 damage_flash_duration_ms = 400
 damage_flash_end_time = 0
@@ -548,6 +553,7 @@ def enter_win_state(time_left):
 def reset_game():
     global player, start_ticks, hazard_last_hit_time, water_last_hit_time
     global damage_flash_end_time, state, lose_background, win_background
+    global water_risen_total
 
     # reset player position
     player_spawn = game_map.get_object_anchor("Player")
@@ -565,6 +571,7 @@ def reset_game():
     player.rect.top = max(0, player.rect.top)
     player.check_ground_support(terrain_rects)
 
+    water_risen_total = 0.0
     spawn_entities()
     player.check_ground_support(moving_platform_system.get_collision_rects())
 
@@ -691,6 +698,15 @@ while running:
 
         for water_area in water_areas:
             water_area.update(dt)
+
+        # Rising water: move surface up each frame, keep collision rects in sync
+        if water_risen_total < WATER_RISE_MAX:
+            rise_this_frame = min(WATER_RISE_SPEED * dt, WATER_RISE_MAX - water_risen_total)
+            water_risen_total += rise_this_frame
+            for i, water_area in enumerate(water_areas):
+                water_area.rise(rise_this_frame)
+                water_rects[i].y      = water_area.rect.y
+                water_rects[i].height = water_area.rect.height
 
         for animated_object in animated_objects:
             animated_object.update(dt)

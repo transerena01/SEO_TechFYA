@@ -705,9 +705,8 @@ class StartScreen:
             {
                 "title": "Water",
                 "lines": [
-                    "Falling into water is instant death.",
-                    "You lose if your body sinks too deep.",
-                    "Stay on platforms above the waterline.",
+                    "You will slowly lose health falling into water",
+                    "Stay on platforms above the waterline!",
                 ],
             },
             {

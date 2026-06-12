@@ -678,20 +678,20 @@ class StartScreen:
             {
                 "title": "Coins & Score",
                 "lines": [
-                    "Collect items scattered across the level.",
-                    "Silver gem  =  10 coins",
-                    "Gold gem    =  20 coins",
-                    "Diamond     =  30 coins",
-                    "Skull       =  50 coins",
+                    "Silver gem      =  10 coins",
+                    "Gold gem        =  20 coins",
+                    "Red Lantern     =  30 coins",
+                    "Gold Lantern    =  50 coins",
+                    "Every 20 points = + 1 gold coin",
+                    "5 gold coins    = + 1 heart ",
                 ],
             },
             {
                 "title": "Health & Potions",
                 "lines": [
-                    "You start with 5 hearts of health.",
+                    "You start with 10 hearts of health.",
                     "Every 100 coins earned = +1 heart (auto).",
                     "Potion         restores 1 heart instantly.",
-                    "Health cannot exceed the maximum of 5.",
                 ],
             },
             {
@@ -706,7 +706,7 @@ class StartScreen:
                 "title": "Water",
                 "lines": [
                     "The sea slowly rises as you play.",
-                    "You lose if your body sinks too deep.",
+                    "Touching water slowly drains your health.",
                     "Keep moving and stay above the waterline.",
                 ],
             },
@@ -1240,27 +1240,53 @@ class StartScreen:
 
         # Use the inner rect (inside the border) for all content placement
         ir = self.instruction_panel_inner_rect
-
         # --- Water background (page 4) ---
+                # --- Water background (page 4) ---
         WATER_PAGE_INDEX = 4
-        if self.instruction_page == WATER_PAGE_INDEX and self.water_body:
-            tile_w = self.water_body.get_width()
-            tile_h = self.water_body.get_height()
-            pad = 4
-            half_y = ir.height // 2
-            water_surf = pygame.Surface((ir.width - pad * 2, half_y), pygame.SRCALPHA)
+
+        if (
+            self.instruction_page == WATER_PAGE_INDEX
+            and self.water_body
+        ):
+            water_height = 180
+            water_y = ir.bottom - water_height
+
+            water_surf = pygame.Surface(
+                (ir.width, water_height),
+                pygame.SRCALPHA,
+            )
+
             ww, wh = water_surf.get_size()
+
             body_tile = self.water_body.copy()
             body_tile.set_alpha(self.water_alpha)
+
+            tile_w = body_tile.get_width()
+            tile_h = body_tile.get_height()
+
+            # Fill water body
             for ty in range(0, wh, tile_h):
                 for tx in range(0, ww, tile_w):
                     water_surf.blit(body_tile, (tx, ty))
+
+            # Animated water top
             if self.water_top_frames:
-                top_frame = self.water_top_frames[int(self.water_top_fi)].copy()
+                top_frame = self.water_top_frames[
+                    int(self.water_top_fi)
+                ].copy()
+
                 top_frame.set_alpha(self.water_alpha)
-                for tx in range(0, ww, tile_w):
+
+                top_w = top_frame.get_width()
+
+                for tx in range(0, ww, top_w):
                     water_surf.blit(top_frame, (tx, 0))
-            self.screen.blit(water_surf, (ir.left + pad, ir.top + half_y))
+
+            self.screen.blit(
+                water_surf,
+                (ir.left, water_y),
+            )
+
 
         page = self.instruction_pages[self.instruction_page]
 

@@ -112,6 +112,9 @@ class Collectible(AnimatedSprite):
         animation_speed=8,
         anchor="topleft",
         velocity=(0, 0),
+        hover_amplitude=0,
+        hover_speed=0,
+        hover_phase=0,
     ):
         super().__init__(
             position,
@@ -124,6 +127,11 @@ class Collectible(AnimatedSprite):
         self.item_name = item_name
         self.coin_value = coin_value
         self.health_value = health_value
+        self.base_anchor_position = pygame.Vector2(self.anchor_position)
+        self.hover_amplitude = max(0.0, float(hover_amplitude))
+        self.hover_speed = max(0.0, float(hover_speed))
+        self.hover_phase = float(hover_phase)
+        self.hover_elapsed = 0.0
 
     @classmethod
     def from_folder(
@@ -139,6 +147,9 @@ class Collectible(AnimatedSprite):
         animation_speed=8,
         anchor="topleft",
         velocity=(0, 0),
+        hover_amplitude=0,
+        hover_speed=0,
+        hover_phase=0,
     ):
         frames = cls.load_frames(folder_path, size=size)
         return cls(
@@ -151,6 +162,21 @@ class Collectible(AnimatedSprite):
             animation_speed=animation_speed,
             anchor=anchor,
             velocity=velocity,
+            hover_amplitude=hover_amplitude,
+            hover_speed=hover_speed,
+            hover_phase=hover_phase,
+        )
+
+    def move(self, dt=1 / 60):
+        self.base_anchor_position += self.velocity * dt
+        float_offset_y = 0.0
+        if self.hover_amplitude > 0 and self.hover_speed > 0:
+            self.hover_elapsed += dt
+            float_offset_y = -math.sin(
+                (self.hover_elapsed * self.hover_speed) + self.hover_phase
+            ) * self.hover_amplitude
+        self.set_anchor_position(
+            self.base_anchor_position + pygame.Vector2(0, float_offset_y)
         )
 
     def collect(self, player):
@@ -191,6 +217,9 @@ class PathSprite(AnimatedSprite):
         self.distance_direction = 1
         self.set_anchor_position(self.path_start)
 
+    def get_path_anchor_position(self):
+        return self.path_start + (self.path_direction * self.distance)
+
     @classmethod
     def from_folder(
         cls,
@@ -230,8 +259,48 @@ class PathSprite(AnimatedSprite):
                 self.distance = -self.distance
                 self.distance_direction = 1
 
-        anchor_position = self.path_start + (self.path_direction * self.distance)
-        self.set_anchor_position(anchor_position)
+        self.set_anchor_position(self.get_path_anchor_position())
+
+
+class FloatingPathSprite(PathSprite):
+    def __init__(
+        self,
+        start_position,
+        end_position,
+        frames,
+        *,
+        water_area=None,
+        groups=None,
+        speed=0,
+        animation_speed=8,
+        anchor="center",
+    ):
+        self.water_area = water_area
+        super().__init__(
+            start_position,
+            end_position,
+            frames,
+            speed=speed,
+            groups=groups,
+            animation_speed=animation_speed,
+            anchor=anchor,
+        )
+
+    def get_float_offset_y(self):
+        if self.water_area is None:
+            return 0
+        return self.water_area.rect.top - self.water_area.initial_top
+
+    def move(self, dt=1 / 60):
+        super().move(dt)
+        base_anchor_position = self.get_path_anchor_position()
+        float_offset_y = self.get_float_offset_y()
+        if float_offset_y:
+            self.set_anchor_position(
+                base_anchor_position + pygame.Vector2(0, float_offset_y)
+            )
+        elif self.anchor_position != base_anchor_position:
+            self.set_anchor_position(base_anchor_position)
 
 
 class OrbitalSprite(AnimatedSprite):
@@ -299,20 +368,37 @@ class OrbitalSprite(AnimatedSprite):
 
 
 class WaterArea:
-    def __init__(self, rect, top_frames, body_tile, *, animation_speed=8):
+    def __init__(
+        self,
+        rect,
+        top_frames,
+        body_tile,
+        *,
+        animation_speed=8,
+        rise_speed=0,
+        rise_delay=0,
+        rise_target_y=0,
+    ):
         if not top_frames:
             raise ValueError("WaterArea requires at least one top frame.")
 
         self.rect = pygame.Rect(rect)
+        self.initial_top = self.rect.top
+        self.bottom = self.rect.bottom
         self.top_frames = top_frames
         self.body_tile = body_tile
         self.animation_speed = animation_speed
+        self.rise_speed = max(0.0, float(rise_speed))
+        self.rise_delay = max(0.0, float(rise_delay))
+        self.rise_target_y = min(self.rect.top, round(float(rise_target_y)))
+        self.top_position = float(self.rect.top)
+        self.elapsed = 0.0
         self.frame_index = 0
         self.top_height = self.top_frames[0].get_height()
         self.body_surface = self._build_tiled_surface(
             self.body_tile,
             self.rect.width,
-            max(0, self.rect.height - self.top_height),
+            max(0, self.bottom - self.top_height - self.rise_target_y),
         )
         self.top_surfaces = [
             self._build_tiled_surface(frame, self.rect.width, self.top_height)
@@ -339,6 +425,9 @@ class WaterArea:
         top_folder,
         body_path,
         animation_speed=8,
+        rise_speed=0,
+        rise_delay=0,
+        rise_target_y=0,
     ):
         top_frames = load_animation_frames(top_folder)
         body_tile = load_image(body_path)
@@ -347,6 +436,9 @@ class WaterArea:
             top_frames,
             body_tile,
             animation_speed=animation_speed,
+            rise_speed=rise_speed,
+            rise_delay=rise_delay,
+            rise_target_y=rise_target_y,
         )
 
     def rise(self, pixels):
@@ -372,19 +464,36 @@ class WaterArea:
         )
 
     def update(self, dt=1 / 60):
-        if len(self.top_frames) == 1:
+        if len(self.top_frames) > 1:
+            self.frame_index = (
+                self.frame_index + (self.animation_speed * dt)
+            ) % len(self.top_frames)
+
+        if self.rise_speed <= 0:
             return
 
-        self.frame_index = (
-            self.frame_index + (self.animation_speed * dt)
-        ) % len(self.top_frames)
+        self.elapsed += dt
+        if self.elapsed < self.rise_delay or self.top_position <= self.rise_target_y:
+            return
+
+        # Keep the bottom edge fixed and raise only the waterline.
+        self.top_position = max(
+            self.rise_target_y,
+            self.top_position - (self.rise_speed * dt),
+        )
+        new_top = round(self.top_position)
+        if new_top != self.rect.top:
+            self.rect.top = new_top
+            self.rect.height = max(self.top_height, self.bottom - self.rect.top)
 
     def draw(self, screen, offset=(0, 0)):
         draw_rect = self.rect.move(offset)
-        if self.body_surface.get_height() > 0:
+        body_height = max(0, self.rect.height - self.top_height)
+        if body_height > 0:
             screen.blit(
                 self.body_surface,
                 (draw_rect.x, draw_rect.y + self.top_height),
+                area=pygame.Rect(0, 0, self.rect.width, body_height),
             )
         top_surface = self.top_surfaces[int(self.frame_index)]
         screen.blit(top_surface, draw_rect.topleft)

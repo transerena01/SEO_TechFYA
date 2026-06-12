@@ -705,8 +705,9 @@ class StartScreen:
             {
                 "title": "Water",
                 "lines": [
-                    "You will slowly lose health falling into water",
-                    "Stay on platforms above the waterline!",
+                    "The sea slowly rises as you play.",
+                    "Touching water slowly drains your health.",
+                    "Keep moving and stay above the waterline.",
                 ],
             },
             {

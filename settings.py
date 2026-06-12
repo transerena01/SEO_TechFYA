@@ -21,6 +21,9 @@ SETTINGS = {
     "COINS_PER_HEALTH": 100,
     "COIN_ICON_VALUE": 20,
     "MAX_HEALTH": 10,
+    "WATER_RISE_SPEED": 2.0,
+    "WATER_RISE_DELAY": 3.0,
+    "WATER_RISE_TARGET_Y": 0,
     "COLLECTIBLE_COIN_VALUES": {
         "silver": 10,
         "gold": 20,

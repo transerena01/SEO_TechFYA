@@ -349,6 +349,28 @@ class WaterArea:
             animation_speed=animation_speed,
         )
 
+    def rise(self, pixels):
+        """Move the water surface up by `pixels` (sub-pixel safe).
+
+        pygame.Rect only stores integers, so tiny per-frame amounts
+        (e.g. 8px/s x 0.016s = 0.13px) would truncate to 0 every frame.
+        A float accumulator banks fractional pixels and only commits
+        whole pixels, so the rise is smooth and nothing is lost.
+        """
+        self._rise_accum = getattr(self, "_rise_accum", 0.0) + pixels
+        whole = int(self._rise_accum)
+        if whole == 0:
+            return
+        self._rise_accum -= whole
+        self.rect.y      -= whole
+        self.rect.height += whole
+        new_body_height = max(0, self.rect.height - self.top_height)
+        self.body_surface = self._build_tiled_surface(
+            self.body_tile,
+            self.rect.width,
+            new_body_height,
+        )
+
     def update(self, dt=1 / 60):
         if len(self.top_frames) == 1:
             return

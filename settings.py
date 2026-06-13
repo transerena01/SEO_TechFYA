@@ -9,6 +9,8 @@ SETTINGS = {
     "GRAVITY":      0.8,
     "SKY_COLOR":    (134, 194, 237),
     "BG_IMAGE":     "asset/background/BG Image.png",
+    "LEVEL_BG_IMAGE": "asset/background/ha_long_bay_background.png",
+    "SMALL_CLOUD_FOLDER": "asset/graphics/level/clouds/small",
     "FONT_PATH":    "font/Minecraft.ttf",
     "MAP_FILE":     "asset/data/levels/main_game.tmx",
     "TOOTH_SCALE":  2.0,
@@ -24,6 +26,9 @@ SETTINGS = {
     "WATER_RISE_SPEED": 2.0,
     "WATER_RISE_DELAY": 3.0,
     "WATER_RISE_TARGET_Y": 0,
+    "WATER_BOUNCE_FORCE": -19,
+    "WATER_SURFACE_ENTRY_MARGIN": 20,
+    "BAMI_INVINCIBILITY_MS": 5000,
     "COLLECTIBLE_COIN_VALUES": {
         "silver": 10,
         "gold": 20,
@@ -32,5 +37,8 @@ SETTINGS = {
     },
     "COLLECTIBLE_HEALTH_VALUES": {
         "potion": 1,
+    },
+    "COLLECTIBLE_INVINCIBILITY_MS": {
+        "bami": 5000,
     },
 }

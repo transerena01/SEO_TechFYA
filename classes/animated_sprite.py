@@ -108,6 +108,7 @@ class Collectible(AnimatedSprite):
         *,
         coin_value=0,
         health_value=0,
+        invincibility_duration_ms=0,
         groups=None,
         animation_speed=8,
         anchor="topleft",
@@ -127,6 +128,7 @@ class Collectible(AnimatedSprite):
         self.item_name = item_name
         self.coin_value = coin_value
         self.health_value = health_value
+        self.invincibility_duration_ms = max(0, int(invincibility_duration_ms))
         self.base_anchor_position = pygame.Vector2(self.anchor_position)
         self.hover_amplitude = max(0.0, float(hover_amplitude))
         self.hover_speed = max(0.0, float(hover_speed))
@@ -142,6 +144,7 @@ class Collectible(AnimatedSprite):
         item_name,
         coin_value=0,
         health_value=0,
+        invincibility_duration_ms=0,
         size=None,
         groups=None,
         animation_speed=8,
@@ -158,8 +161,43 @@ class Collectible(AnimatedSprite):
             frames,
             coin_value=coin_value,
             health_value=health_value,
+            invincibility_duration_ms=invincibility_duration_ms,
             groups=groups,
             animation_speed=animation_speed,
+            anchor=anchor,
+            velocity=velocity,
+            hover_amplitude=hover_amplitude,
+            hover_speed=hover_speed,
+            hover_phase=hover_phase,
+        )
+
+    @classmethod
+    def from_image(
+        cls,
+        image_path,
+        position,
+        *,
+        item_name,
+        coin_value=0,
+        health_value=0,
+        invincibility_duration_ms=0,
+        size=None,
+        groups=None,
+        anchor="topleft",
+        velocity=(0, 0),
+        hover_amplitude=0,
+        hover_speed=0,
+        hover_phase=0,
+    ):
+        return cls(
+            item_name,
+            position,
+            [load_image(image_path, size=size)],
+            coin_value=coin_value,
+            health_value=health_value,
+            invincibility_duration_ms=invincibility_duration_ms,
+            groups=groups,
+            animation_speed=0,
             anchor=anchor,
             velocity=velocity,
             hover_amplitude=hover_amplitude,
@@ -184,6 +222,60 @@ class Collectible(AnimatedSprite):
             player.add_coins(self.coin_value)
         if self.health_value:
             player.heal(self.health_value)
+        if self.invincibility_duration_ms:
+            player.grant_invincibility(self.invincibility_duration_ms)
+
+
+class LeverSwitch(AnimatedSprite):
+    def __init__(
+        self,
+        position,
+        inactive_image,
+        active_image,
+        *,
+        groups=None,
+        anchor="midbottom",
+    ):
+        super().__init__(
+            position,
+            [inactive_image],
+            groups=groups,
+            animation_speed=0,
+            anchor=anchor,
+        )
+        self.inactive_image = inactive_image
+        self.active_image = active_image
+        self.is_activated = False
+
+    @classmethod
+    def from_images(
+        cls,
+        position,
+        *,
+        inactive_path,
+        active_path,
+        size=None,
+        groups=None,
+        anchor="midbottom",
+    ):
+        inactive_image = load_image(inactive_path, size=size)
+        active_image = load_image(active_path, size=size)
+        return cls(
+            position,
+            inactive_image,
+            active_image,
+            groups=groups,
+            anchor=anchor,
+        )
+
+    def activate(self):
+        if self.is_activated:
+            return False
+
+        self.is_activated = True
+        self.image = self.active_image
+        self.set_anchor_position(self.anchor_position)
+        return True
 
 
 class PathSprite(AnimatedSprite):

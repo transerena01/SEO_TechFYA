@@ -22,6 +22,7 @@ class Player:
         self.coins = 0
         self.coin_progress = 0
         self.alive = True
+        self.invincible_until_ms = 0
 
         self.animations = {
             "run": self.load_animation("02-Run"),
@@ -145,8 +146,29 @@ class Player:
         if self.points <= 0:
             self.alive = False
 
+    def is_invincible(self):
+        return pygame.time.get_ticks() < self.invincible_until_ms
+
+    def grant_invincibility(self, duration_ms):
+        duration_ms = max(0, int(duration_ms))
+        if duration_ms <= 0:
+            return
+        self.invincible_until_ms = max(
+            self.invincible_until_ms,
+            pygame.time.get_ticks() + duration_ms,
+        )
+
     def take_damage(self, amount):
+        if amount <= 0:
+            return False
+        if self.is_invincible():
+            return False
         self.points = max(0, self.points - amount)
+        return True
+
+    def launch_upward(self, force):
+        self.velocity_y = min(self.velocity_y, force)
+        self.on_ground = False
 
     def heal(self, amount):
         self.points = min(self.max_points, self.points + amount)

@@ -203,6 +203,13 @@ def load_heart_frames(scale):
     )
 
 
+def load_golden_heart(size):
+    return load_image(
+        "asset/graphics/ui/golden_heart.png",
+        size=size,
+    )
+
+
 def load_coin_frames(scale):
     return [
         load_image(

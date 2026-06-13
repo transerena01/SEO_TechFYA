@@ -6,6 +6,7 @@ from classes.animated_sprite import (
     AnimatedSprite,
     Collectible,
     FloatingPathSprite,
+    LeverSwitch,
     OrbitalSprite,
     PathSprite,
     WaterArea,
@@ -16,7 +17,7 @@ from classes.player import Player
 from classes.platform import MovingPlatformSystem
 from classes.camera import Camera
 from classes.ui import GameHUD, LoseScreen, StartScreen, WinScreen
-from classes.tilemap import GameMap
+from classes.tilemap import GameMap, ParallaxBackground
 
 
 pygame.init()
@@ -101,28 +102,6 @@ time_limit = 120  # seconds
 game_map = GameMap(SETTINGS["MAP_FILE"])
 map_objects = game_map.get_objects()
 
-# Add a barrel platform at the gap near x=2048 (where players keep falling into water).
-# Barrels are 46x50; place a row of 4 side-by-side so the player has a safe landing spot.
-_BARREL_W, _BARREL_H = 46, 50
-_BARREL_ROW_X = 2048        # centre of the platform
-_BARREL_COUNT = 4
-_BARREL_Y = 960 - _BARREL_H  # sit right on top of the water line
-_BARREL_START_X = _BARREL_ROW_X - (_BARREL_COUNT * _BARREL_W) // 2
-for _bi in range(_BARREL_COUNT):
-    map_objects.append({
-        "id":         9100 + _bi,
-        "name":       "barrel",
-        "layer":      "Objects",
-        "x":          _BARREL_START_X + _bi * _BARREL_W,
-        "y":          _BARREL_Y,
-        "width":      _BARREL_W,
-        "height":     _BARREL_H,
-        "gid":        None,
-        "raw_gid":    None,
-        "flip_x":     False,
-        "properties": {},
-    })
-
 # Win condition: player touches the flag
 _flag_obj = game_map.get_object_by_name("flag")
 if _flag_obj:
@@ -142,6 +121,13 @@ camera = Camera(
     game_map.pixel_height,
     follow_y=True,
 )
+level_background = ParallaxBackground(
+    (SETTINGS["WIDTH"], SETTINGS["HEIGHT"]),
+    (game_map.pixel_width, game_map.pixel_height),
+    background_path=SETTINGS["LEVEL_BG_IMAGE"],
+    sky_color=SETTINGS["SKY_COLOR"],
+    small_cloud_folder=SETTINGS["SMALL_CLOUD_FOLDER"],
+)
 
 terrain_rects = game_map.get_terrain_rects()
 terrain_rects += game_map.get_boundary_rects()
@@ -158,21 +144,6 @@ solid_object_rects = []
 hazard_rects = []
 
 REMOVED_OBJECT_IDS = {76}  # saw sitting above the barrel platform
-
-# Add a potion on top of the barrel platform at x=2048
-map_objects.append({
-    "id":         9200,
-    "name":       "potion",
-    "layer":      "Items",
-    "x":          2048 - 32,
-    "y":          _BARREL_Y - 64,
-    "width":      64,
-    "height":     64,
-    "gid":        None,
-    "raw_gid":    None,
-    "flip_x":     False,
-    "properties": {},
-})
 
 for map_object in map_objects:
     if map_object.get("id") in REMOVED_OBJECT_IDS:
@@ -244,6 +215,9 @@ moving_objects = []
 moving_hazard_objects = []
 water_areas = []
 water_rects = []
+lever_switch = None
+pending_boat = None
+boat_unlocked = False
 world_rect = pygame.Rect(0, 0, game_map.pixel_width, game_map.pixel_height)
 moving_platform_system = MovingPlatformSystem(terrain_rects)
 
@@ -277,10 +251,41 @@ def find_water_area_for_rect(target_rect):
     return best_water_area
 
 
+def player_can_activate_lever(player, lever_switch):
+    if lever_switch is None or lever_switch.is_activated:
+        return False
+
+    interaction_rect = lever_switch.rect.inflate(96, 48)
+    interaction_rect.bottom = lever_switch.rect.bottom + 20
+    return player.rect.colliderect(interaction_rect)
+
+
+def activate_lever_and_spawn_boat():
+    global pending_boat, boat_unlocked
+
+    if not player_can_activate_lever(player, lever_switch):
+        return False
+
+    if not lever_switch.activate():
+        return False
+
+    if pending_boat is not None and not boat_unlocked:
+        moving_objects.append(pending_boat)
+        moving_platform_system.register(
+            pending_boat,
+            solid=True,
+            platform=True,
+        )
+        boat_unlocked = True
+        pending_boat = None
+
+    return True
+
+
 def spawn_entities():
     global teeth, animated_objects, collectibles, shells
     global moving_objects, moving_hazard_objects, water_areas, water_rects
-    global moving_platform_system
+    global moving_platform_system, lever_switch, pending_boat
 
     teeth = []
     animated_objects = []
@@ -290,6 +295,8 @@ def spawn_entities():
     moving_hazard_objects = []
     water_areas = []
     water_rects = []
+    lever_switch = None
+    pending_boat = None
     moving_platform_system = MovingPlatformSystem(terrain_rects)
 
     tooth_objects = [
@@ -330,11 +337,20 @@ def spawn_entities():
         "potion": "asset/graphics/items/potion",
         "skull": "asset/graphics/items/skull",
     }
+    collectible_image_paths = {
+        "bami": "asset/graphics/items/diamond/bami.png",
+    }
+    collectible_item_overrides = {
+        "diamond": {
+            "item_name": "bami",
+            "image_path": "asset/graphics/items/diamond/bami.png",
+        },
+    }
     static_object_images = {
         "barrel": "asset/graphics/objects/barrel.png",
         "crate": "asset/graphics/objects/crate.png",
     }
-    pickup_object_names = {"gold", "silver", "diamond", "potion", "skull"}
+    pickup_object_names = {"gold", "silver", "diamond", "potion", "skull", "bami"}
     collectible_hover_profiles = {
         "diamond": {
             "hover_amplitude": 12,
@@ -348,9 +364,14 @@ def spawn_entities():
             "hover_amplitude": 16,
             "hover_speed": 2.2,
         },
+        "bami": {
+            "hover_amplitude": 14,
+            "hover_speed": 2.0,
+        },
     }
     pickup_coin_values = SETTINGS["COLLECTIBLE_COIN_VALUES"]
     pickup_health_values = SETTINGS["COLLECTIBLE_HEALTH_VALUES"]
+    pickup_invincibility_durations = SETTINGS["COLLECTIBLE_INVINCIBILITY_MS"]
     object_layer_animated_names = {
         "flag", "saw", "floor_spike",
         "palm_bg", "palm_bg_left", "palm_bg_right",
@@ -363,8 +384,38 @@ def spawn_entities():
         object_name = (map_object["name"] or "").lower()
         object_layer = (map_object["layer"] or "").lower()
         asset_folder = animated_object_folders.get(object_name)
+        collectible_override = collectible_item_overrides.get(object_name, {})
+        collectible_item_name = collectible_override.get("item_name", object_name)
+        collectible_image_path = collectible_override.get(
+            "image_path",
+            collectible_image_paths.get(object_name),
+        )
         static_image_path = static_object_images.get(object_name)
-        if asset_folder is None and static_image_path is None:
+        if object_name == "lever" and object_layer == "objects":
+            object_position = (
+                round(map_object["x"] + (map_object["width"] / 2)),
+                round(map_object["y"] + map_object["height"]),
+            )
+            object_size = (
+                max(1, round(map_object["width"])),
+                max(1, round(map_object["height"])),
+            )
+            lever_switch = LeverSwitch.from_images(
+                object_position,
+                inactive_path="asset/graphics/lever/left.png",
+                active_path="asset/graphics/lever/right.png",
+                size=object_size,
+                anchor="midbottom",
+            )
+            if boat_unlocked:
+                lever_switch.activate()
+            animated_objects.append(lever_switch)
+            continue
+        if (
+            asset_folder is None
+            and collectible_image_path is None
+            and static_image_path is None
+        ):
             continue
         if object_name in pickup_object_names and object_layer != "items":
             continue
@@ -390,19 +441,32 @@ def spawn_entities():
                 )
             else:
                 object_size = scale_size(object_size, SETTINGS["ITEM_SCALE"])
-            collectibles.append(
-                Collectible.from_folder(
-                    asset_folder,
-                    object_position,
-                    item_name=object_name,
-                    coin_value=pickup_coin_values.get(object_name, 0),
-                    health_value=pickup_health_values.get(object_name, 0),
-                    size=object_size,
-                    anchor="midbottom",
-                    animation_speed=8,
-                    **collectible_hover_profiles.get(object_name, {}),
+            collectible_kwargs = {
+                "item_name": collectible_item_name,
+                "coin_value": pickup_coin_values.get(object_name, 0),
+                "health_value": pickup_health_values.get(collectible_item_name, 0),
+                "invincibility_duration_ms": pickup_invincibility_durations.get(collectible_item_name, 0),
+                "size": object_size,
+                "anchor": "midbottom",
+                **collectible_hover_profiles.get(collectible_item_name, collectible_hover_profiles.get(object_name, {})),
+            }
+            if collectible_image_path is not None:
+                collectibles.append(
+                    Collectible.from_image(
+                        collectible_image_path,
+                        object_position,
+                        **collectible_kwargs,
+                    )
                 )
-            )
+            else:
+                collectibles.append(
+                    Collectible.from_folder(
+                        asset_folder,
+                        object_position,
+                        animation_speed=8,
+                        **collectible_kwargs,
+                    )
+                )
             continue
         if static_image_path is not None:
             animated_objects.append(
@@ -571,6 +635,9 @@ def spawn_entities():
                 animation_speed=animation_speed,
                 anchor="center",
             )
+        if object_name == "boat" and not boat_unlocked:
+            pending_boat = moving_sprite
+            continue
         moving_objects.append(moving_sprite)
         moving_platform_system.register(
             moving_sprite,
@@ -588,8 +655,29 @@ def player_touches_hazard(player_rect, hazard_rect, padding=4):
     return player_rect.colliderect(hazard_rect.inflate(padding * 2, padding * 2))
 
 
-def player_touching_water(player_rect, water_rect):
-    return player_rect.colliderect(water_rect)
+def resolve_player_water_collision(player, water_rects):
+    touching_water = False
+    bounced_off_water = False
+    previous_bottom = player.previous_y + player.rect.height
+    entry_margin = SETTINGS["WATER_SURFACE_ENTRY_MARGIN"]
+
+    for water_rect in water_rects:
+        if not player.rect.colliderect(water_rect):
+            continue
+
+        touching_water = True
+        entered_from_above = previous_bottom <= water_rect.top + entry_margin
+
+        if (
+            not bounced_off_water
+            and player.velocity_y > 0
+            and entered_from_above
+        ):
+            player.rect.bottom = water_rect.top
+            player.launch_upward(SETTINGS["WATER_BOUNCE_FORCE"])
+            bounced_off_water = True
+
+    return touching_water, bounced_off_water
 
 
 # --- Damage timers (outside the loop so they persist between frames) ---
@@ -599,7 +687,7 @@ hazard_damage = 1
 
 water_hit_cooldown_ms = 800
 water_last_hit_time = -water_hit_cooldown_ms
-water_damage = 1
+water_damage = 2
 
 # --- Damage flash effect ---
 damage_flash_duration_ms = 400
@@ -622,6 +710,7 @@ def enter_win_state(time_left):
 def reset_game():
     global player, start_ticks, hazard_last_hit_time, water_last_hit_time
     global damage_flash_end_time, state, lose_background, win_background
+    global boat_unlocked
 
     # reset player position
     player_spawn = game_map.get_object_anchor("Player")
@@ -635,10 +724,12 @@ def reset_game():
     player.alive = True
     player.coins = 0
     player.coin_progress = 0
+    player.invincible_until_ms = 0
     player.rect.left = max(0, player.rect.left)
     player.rect.top = max(0, player.rect.top)
     player.check_ground_support(terrain_rects)
 
+    boat_unlocked = False
     spawn_entities()
     player.check_ground_support(moving_platform_system.get_collision_rects())
 
@@ -666,6 +757,9 @@ while running:
             if action == "game":
                 reset_game()
                 play_background_music(MAIN_GAME_MUSIC_PATH, volume=0.4)
+        elif state == "game":
+            if event.type == pygame.KEYDOWN and event.key in (pygame.K_DOWN, pygame.K_e):
+                activate_lever_and_spawn_boat()
         elif state == "lose":
             action = lose_screen.handle_event(event)
             if action == "retry":
@@ -738,15 +832,17 @@ while running:
         player_collision_rects = moving_platform_system.get_collision_rects()
         player.move(keys, player_collision_rects)
         player.update()
+        activate_lever_and_spawn_boat()
 
         # Water damage — 1 heart lost every 0.8s while touching water
         current_time = pygame.time.get_ticks()
-        if any(player_touching_water(player.rect, water_rect) for water_rect in water_rects):
+        touching_water, _ = resolve_player_water_collision(player, water_rects)
+        if touching_water:
             if current_time - water_last_hit_time >= water_hit_cooldown_ms:
-                enemy_hit_sound.play()
-                player.take_damage(water_damage)
-                water_last_hit_time = current_time
-                damage_flash_end_time = current_time + damage_flash_duration_ms
+                if player.take_damage(water_damage):
+                    enemy_hit_sound.play()
+                    water_last_hit_time = current_time
+                    damage_flash_end_time = current_time + damage_flash_duration_ms
 
         # Tooth enemies
         for tooth in teeth:
@@ -769,6 +865,8 @@ while running:
         for animated_object in animated_objects:
             animated_object.update(dt)
 
+        level_background.update(dt)
+
         # Collectibles
         for collectible in collectibles[:]:
             collectible.update(dt)
@@ -788,10 +886,10 @@ while running:
                 for moving_hazard in moving_hazard_objects
             )
             if touching_static_hazard or touching_moving_hazard:
-                enemy_hit_sound.play()
-                player.take_damage(hazard_damage)
-                hazard_last_hit_time = current_time
-                damage_flash_end_time = current_time + damage_flash_duration_ms
+                if player.take_damage(hazard_damage):
+                    enemy_hit_sound.play()
+                    hazard_last_hit_time = current_time
+                    damage_flash_end_time = current_time + damage_flash_duration_ms
 
         camera.update(player.rect)
 
@@ -801,7 +899,7 @@ while running:
             continue
 
         offset = camera.get_offset()
-        screen.fill(SETTINGS["SKY_COLOR"])
+        level_background.draw(screen, camera)
         game_map.draw_background(screen, camera)
 
         for water_area in water_areas:
@@ -825,11 +923,13 @@ while running:
             tooth.draw(screen, offset)
 
         game_map.draw_foreground(screen, camera)
-        game_hud.draw(screen, player.points, player.max_points, player.coin_progress)
-
-        # Live coin counter
-        score_text = timer_font.render(f"COINS: {player.coins}", True, (255, 244, 214))
-        screen.blit(score_text, (30, 90))
+        game_hud.draw(
+            screen,
+            player.points,
+            player.max_points,
+            player.coin_progress,
+            invincible=player.is_invincible(),
+        )
 
         timer_text = timer_font.render(f"TIME: {time_left}", True, (255, 244, 214))
         screen.blit(timer_text, (SETTINGS["WIDTH"] - timer_text.get_width() - 30, 25))

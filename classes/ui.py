@@ -6,6 +6,7 @@ from classes.loader import (
     load_coin_frames,
     load_frames,
     load_font,
+    load_golden_heart,
     load_image,
     load_heart_frames,
     load_frames_from_candidates,
@@ -360,6 +361,7 @@ class GameHUD:
         self.scale = scale
         self.coin_scale = coin_scale
         self.frames = load_heart_frames(self.scale)
+        self.golden_heart = load_golden_heart(self.frames[0].get_size())
         self.coin_frames = load_coin_frames(self.coin_scale)
         self.frame_index = 0.0
         self.coin_frame_index = 0.0
@@ -376,10 +378,10 @@ class GameHUD:
         if len(self.coin_frames) > 1:
             self.coin_frame_index = (self.coin_frame_index + (self.animation_speed * dt)) % len(self.coin_frames)
 
-    def draw(self, screen, health, max_health=None, coin_progress=0):
+    def draw(self, screen, health, max_health=None, coin_progress=0, invincible=False):
         max_hearts = self.heart_count if max_health is None else max_health
         visible_hearts = max(0, min(int(health), int(max_hearts)))
-        frame = self.frames[int(self.frame_index)]
+        frame = self.golden_heart if invincible else self.frames[int(self.frame_index)]
         empty_frame = frame.copy()
         empty_frame.set_alpha(self.empty_alpha)
 
@@ -559,7 +561,7 @@ class StartScreen:
 
         self.show_instructions = False
         self.instruction_page = 0
-        # Instruction popup layout: edit these values directly to move or resize the pieces.
+        self.instruction_water_offset_y = 80
         self.instruction_panel_size = (960, 600)
         self.instruction_panel_center_offset = (0, 0)
         self.instruction_title_paper_size = (820, 100)
@@ -642,6 +644,21 @@ class StartScreen:
             except Exception:
                 return []
 
+        def _load_instruction_icon(*, folder=None, image_path=None, target_h=42):
+            try:
+                if folder is not None:
+                    surface = load_frames(folder)[0]
+                else:
+                    surface = load_image(image_path)
+                width, height = surface.get_size()
+                scale = target_h / max(height, 1)
+                return pygame.transform.scale(
+                    surface,
+                    (max(1, round(width * scale)), max(1, round(height * scale))),
+                )
+            except Exception:
+                return None
+
         TARGET_H = 48
         self.tooth_frames   = _load_scaled("asset/graphics/enemy/Fierce Tooth/02-Run", TARGET_H)
         self.shell_frames   = _load_scaled("asset/graphics/enemy/shell/idle",          TARGET_H)
@@ -664,6 +681,21 @@ class StartScreen:
         self.water_top_fi    = 0.0
         self.water_top_speed = 0.08
         self.water_alpha     = 110
+        self.instruction_item_icons = {
+            "silver": _load_instruction_icon(folder="asset/graphics/items/silver"),
+            "gold": _load_instruction_icon(folder="asset/graphics/items/gold"),
+            "bami": _load_instruction_icon(image_path="asset/graphics/items/diamond/bami.png"),
+            "lantern": _load_instruction_icon(folder="asset/graphics/items/skull"),
+            "lotus": _load_instruction_icon(image_path="asset/graphics/items/potion/lotus.png"),
+            "heart": _load_instruction_icon(folder="asset/graphics/ui/heart"),
+            "golden_heart": _load_instruction_icon(image_path="asset/graphics/ui/golden_heart.png"),
+        }
+        if self.tooth_frames:
+            self.instruction_item_icons["tooth"] = self.tooth_frames[0]
+        if self.shell_frames:
+            self.instruction_item_icons["shell"] = self.shell_frames[0]
+        if self.saw_frames:
+            self.instruction_item_icons["saw"] = self.saw_frames[0]
 
         self.instruction_pages = [
             {
@@ -672,35 +704,54 @@ class StartScreen:
                     "Use the arrow keys to move your character.",
                     "LEFT RIGHT    walk left or right",
                     "UP            jump",
-                    "You can jump over enemies and hazards.",
+                    "TOUCH LEVER   call the boat",
                 ],
             },
             {
                 "title": "Coins & Score",
-                "lines": [
-                    "Silver gem      =  10 coins",
-                    "Gold gem        =  20 coins",
-                    "Red Lantern     =  30 coins",
-                    "Gold Lantern    =  50 coins",
-                    "Every 20 points = + 1 gold coin",
-                    "5 gold coins    = + 1 heart ",
+                "item_rows_offset": -50,
+                "item_rows": [
+                    {"icon": "silver", "label": "Silver: 10"},
+                    {"icon": "gold", "label": "Gold: 20"},
+                    {
+                        "icon": "bami",
+                        "label": "Bami: 30",
+                        "symbol": "+",
+                        "symbol_height": 38,
+                        "trailing_icon": "golden_heart",
+                        "trailing_icon_height": 38,
+                        "extra_gap": 10,
+                    },
+                    {"icon": "lantern", "label": "Lantern: 50"},
+                    {
+                        "icon": "lotus",
+                        "label": "Lotus: 1",
+                        "symbol": "+",
+                        "symbol_height": 38,
+                        "trailing_icon": "heart",
+                        "trailing_icon_height": 38,
+                        "extra_gap": 10,
+                    },
                 ],
             },
             {
                 "title": "Health & Potions",
                 "lines": [
-                    "You start with 10 hearts of health.",
-                    "Every 100 coins earned = +1 heart (auto).",
-                    "Potion         restores 1 heart instantly.",
+                    "You start with 10 hearts.",
+                    "Every 100 coins gives 1 heart.",
                 ],
+                "line_spacing": 52,
+                "content_gap_after_lines": 32,
             },
             {
                 "title": "Enemies & Hazards",
-                "lines": [
-                    "Fierce Tooth    patrols left and right.",
-                    "Shell           fires pearls at you.",
-                    "Saw             deal damage on contact.",
+                "item_rows": [
+                    {"icon": "tooth", "label": "Fierce Tooth", "icon_height": 64},
+                    {"icon": "shell", "label": "Shell", "icon_height": 64},
+                    {"icon": "saw", "label": "Saw", "icon_height": 64},
                 ],
+                "item_row_gap": 80,
+                "item_rows_offset": -30,
             },
             {
                 "title": "Water",
@@ -766,6 +817,93 @@ class StartScreen:
 
     def render_instruction_button_text(self, label):
         return self.instruction_button_renderer.render_normalized(label)
+
+    def _scale_surface_to_height(self, surface, target_height):
+        if surface is None or not target_height:
+            return surface
+
+        width, height = surface.get_size()
+        if height <= 0 or height == target_height:
+            return surface
+
+        scale = target_height / height
+        return pygame.transform.scale(
+            surface,
+            (max(1, round(width * scale)), max(1, round(height * scale))),
+        )
+
+    def draw_instruction_item_rows(self, item_rows, inner_rect, start_y, row_gap=58):
+        block_width = 0
+        prepared_rows = []
+
+        for row in item_rows:
+            icon_surface = self.instruction_item_icons.get(row["icon"])
+            icon_surface = self._scale_surface_to_height(icon_surface, row.get("icon_height"))
+
+            text_surface = None
+            label = row.get("label")
+            if label:
+                text_surface = self.render_instruction_body_text(label)
+                if text_surface is None:
+                    text_surface = self.font_panel.render(label, True, (232, 240, 255))
+
+            extras = []
+            symbol = row.get("symbol")
+            if symbol:
+                symbol_surface = self.font_panel.render(symbol, True, (68, 76, 110))
+                symbol_surface = self._scale_surface_to_height(
+                    symbol_surface,
+                    row.get("symbol_height"),
+                )
+                extras.append(symbol_surface)
+
+            trailing_icon_name = row.get("trailing_icon")
+            if trailing_icon_name:
+                trailing_icon_surface = self.instruction_item_icons.get(trailing_icon_name)
+                trailing_icon_surface = self._scale_surface_to_height(
+                    trailing_icon_surface,
+                    row.get("trailing_icon_height"),
+                )
+                if trailing_icon_surface is not None:
+                    extras.append(trailing_icon_surface)
+
+            icon_gap = row.get("icon_gap", 20)
+            extra_gap = row.get("extra_gap", 12)
+            segments = [segment for segment in (icon_surface, text_surface) if segment is not None]
+            segments.extend(extras)
+
+            gaps = []
+            for segment_index in range(max(0, len(segments) - 1)):
+                if icon_surface is not None and text_surface is not None and segment_index == 0:
+                    gaps.append(icon_gap)
+                else:
+                    gaps.append(extra_gap)
+
+            row_width = sum(segment.get_width() for segment in segments) + sum(gaps)
+            prepared_rows.append(
+                {
+                    "segments": segments,
+                    "gaps": gaps,
+                }
+            )
+            block_width = max(block_width, row_width)
+
+        block_left = inner_rect.centerx - block_width // 2
+        last_row_y = start_y
+
+        for row_index, row_data in enumerate(prepared_rows):
+            row_y = start_y + row_index * row_gap
+            last_row_y = row_y
+            draw_x = block_left
+
+            for segment_index, segment in enumerate(row_data["segments"]):
+                segment_rect = segment.get_rect(midleft=(draw_x, row_y))
+                self.screen.blit(segment, segment_rect)
+                draw_x = segment_rect.right
+                if segment_index < len(row_data["gaps"]):
+                    draw_x += row_data["gaps"][segment_index]
+
+        return last_row_y + row_gap // 2
 
     def build_menu_board(self, label):
         text_surface = self.render_small_text(label)
@@ -1249,7 +1387,7 @@ class StartScreen:
             and self.water_body
         ):
             water_height = 180
-            water_y = ir.bottom - water_height
+            water_y = ir.bottom - water_height + self.instruction_water_offset_y
 
             water_surf = pygame.Surface(
                 (ir.width, water_height),
@@ -1282,10 +1420,13 @@ class StartScreen:
                 for tx in range(0, ww, top_w):
                     water_surf.blit(top_frame, (tx, 0))
 
+            previous_clip = self.screen.get_clip()
+            self.screen.set_clip(ir)
             self.screen.blit(
                 water_surf,
                 (ir.left, water_y),
             )
+            self.screen.set_clip(previous_clip)
 
 
         page = self.instruction_pages[self.instruction_page]
@@ -1304,33 +1445,48 @@ class StartScreen:
 
         # --- Content lines ---
         line_start_y = ir.top + (28 if self.instruction_panel_title_paper_surface is not None else 82)
-        if len(page["lines"]) > 1:
-            line_spacing = min(
-                40,
-                max(26, (ir.bottom - 22 - line_start_y) // (len(page["lines"]) - 1)),
-            )
+        lines = page.get("lines", [])
+        item_rows = page.get("item_rows", [])
+        line_spacing = 0
+
+        if lines:
+            if len(lines) > 1:
+                if item_rows:
+                    line_spacing = page.get("line_spacing", 52)
+                else:
+                    line_spacing = min(
+                        40,
+                        max(26, (ir.bottom - 22 - line_start_y) // (len(lines) - 1)),
+                    )
+            else:
+                line_spacing = 0
+
+            for index, line in enumerate(lines):
+                line_text = self.render_instruction_body_text(line)
+                if line_text is None:
+                    line_text = self.font_panel.render(line, True, (232, 240, 255))
+                line_rect = line_text.get_rect(
+                    center=(ir.centerx, line_start_y + index * line_spacing)
+                )
+                self.screen.blit(line_text, line_rect)
+
+            content_y = line_start_y + (len(lines) - 1) * line_spacing
+            if item_rows:
+                content_y += page.get("content_gap_after_lines", 36)
         else:
-            line_spacing = 0
-        for index, line in enumerate(page["lines"]):
-            line_text = self.render_instruction_body_text(line)
-            if line_text is None:
-                line_text = self.font_panel.render(line, True, (232, 240, 255))
-            line_rect = line_text.get_rect(
-                center=(ir.centerx, line_start_y + index * line_spacing)
+            content_y = line_start_y + 26
+
+        if item_rows:
+            row_start_y = page.get(
+                "item_rows_start_y",
+                content_y + page.get("item_rows_offset", 0),
             )
-            self.screen.blit(line_text, line_rect)
+            row_gap = page.get("item_row_gap", 58)
+            self.draw_instruction_item_rows(item_rows, ir, row_start_y, row_gap=row_gap)
 
         # --- Sprite decorations ---
-        HEALTH_PAGE_INDEX = 2
-        if self.instruction_page == HEALTH_PAGE_INDEX and self.potion_frames:
-            potion_frame = self.potion_frames[int(self.potion_frame_index)]
-            sprite_x = ir.right - 60
-            sprite_y = line_start_y + 2 * line_spacing
-            potion_rect = potion_frame.get_rect(center=(sprite_x, sprite_y))
-            self.screen.blit(potion_frame, potion_rect)
-
         ENEMIES_PAGE_INDEX = 3
-        if self.instruction_page == ENEMIES_PAGE_INDEX:
+        if self.instruction_page == ENEMIES_PAGE_INDEX and not item_rows:
             sprite_x = ir.right - 60
             enemy_sprites = [
                 (self.tooth_frames, self.tooth_fi),
